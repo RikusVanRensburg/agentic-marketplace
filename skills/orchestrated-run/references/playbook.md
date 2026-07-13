@@ -10,7 +10,7 @@ its model.
    question. If not, ask for it. Do not proceed without it.
 2. Pick a `<slug>` (kebab-case) and `<scope>` (repo root, or a narrower project path if the
    work is confined). Compute `<date>` = `date -u +%F`.
-3. Create the ledger: `<scope>/.ledger/<slug>/{grill,specs,plans,review}/`. Never touch
+3. Create the ledger: `<scope>/.ledger/<slug>/{specs,plans,review}/`. Never touch
    `.gitignore`.
 4. Confirm the checked-out branch is one the user accepts commits on — ledger docs land here
    directly, and this branch becomes `BASE` at Stage 5's pre-flight (see below).
@@ -25,8 +25,7 @@ evidence — well enough to ask sharp questions.
 
 ## Stage 2 — Grill (exhaustive, architecture-first)
 
-Invoke `rr:grill`, pointing its docs root at `<ledger>/grill`. Conduct it relentlessly, one
-question at a time, each with a recommended answer:
+Conduct it yourself, relentlessly, one question at a time, each with a recommended answer:
 
 - **Lead with architecture.** Boundaries, ownership, lifecycle, state, data flow, extension
   points, coupling, failure modes, migration/compatibility. These come first and get the most
@@ -36,11 +35,12 @@ question at a time, each with a recommended answer:
 - Front-load EVERYTHING. The contract is that no architectural question is left for
   implementation-time discovery.
 
-Capture resolved terminology and decisions in `grill/CONTEXT.md` and ADRs under `grill/adr/`.
+Capture resolved terminology and decisions inline — they feed directly into the Stage 3
+design spec (no separate ledger subfolder).
 
 ## Stage 3 — Design (+ Gate 1)
 
-Synthesize the grill output into a design spec at
+Synthesize the resolved interrogation into a design spec at
 `<ledger>/specs/<date>-<slug>-design.md`. If the design space is wide, dispatch design
 subagents to explore alternatives in parallel; otherwise synthesize directly. Either way,
 **defend every load-bearing choice** per `rr:defending-findings` — alternatives considered,

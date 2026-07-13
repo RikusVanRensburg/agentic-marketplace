@@ -42,7 +42,7 @@ orchestrator synthesizes directly.
 ```
 <DEFEND preamble>
 
-Given this resolved context (grill CONTEXT.md + ADRs attached), produce a design for <change>.
+Given this resolved context (the interrogation's resolved terminology and decisions attached), produce a design for <change>.
 Honor these locked decisions: <list>. Respect these scope constraints: <list>.
 For each design choice, defend it per the discipline above — alternatives considered, why this
 one survives. Output a spec section: components, contracts, state ownership, data flow,

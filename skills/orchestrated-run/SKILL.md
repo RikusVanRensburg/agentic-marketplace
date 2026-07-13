@@ -1,7 +1,7 @@
 ---
 name: orchestrated-run
 version: 1.0.0
-description: Orchestrate a non-trivial change end-to-end as the main session, dispatching subagents for investigation, design, planning, and implementation, then ONE consolidated code review at the very end. The defining discipline is grill-everything-up-front (exhaustive, architecture-first interrogation via rr:grill before any design), with rr:defending-findings applied to every choice in every stage and injected into every subagent. Use when the user wants to orchestrate a substantial build/rework, says "orchestrate this run", "let's do the full run", "grill it then build it", "you be the orchestrator", or describes a symptom/change and wants it interrogated thoroughly before any code is written — especially after a prior under-specified attempt forced a rework. Differs from rr:workshop — the user describes first, grilling is exhaustive and front-loaded, the whole pipeline runs to completion, and review happens once at the end rather than per task.
+description: Orchestrate a non-trivial change end-to-end as the main session, dispatching subagents for investigation, design, planning, and implementation, then ONE consolidated code review at the very end. The defining discipline is grill-everything-up-front (exhaustive, architecture-first interrogation before any design), with rr:defending-findings applied to every choice in every stage and injected into every subagent. Use when the user wants to orchestrate a substantial build/rework, says "orchestrate this run", "let's do the full run", "grill it then build it", "you be the orchestrator", or describes a symptom/change and wants it interrogated thoroughly before any code is written — especially after a prior under-specified attempt forced a rework.
 ---
 
 # Orchestrated Run
@@ -22,7 +22,7 @@ skill is to never let that happen again: **all questions are raised up front.**
 1. **User describes first.** Do not start grilling until the user has described a symptom, a
    desired change, or a "how does this work?" question. Then **read the relevant code before
    asking anything** — questions must be grounded, not generic.
-2. **Grill everything up front.** Use `rr:grill` to interrogate exhaustively, one question at
+2. **Grill everything up front.** Interrogate exhaustively, one question at
    a time, each with a recommended answer. Bias hard toward **architecture**: boundaries,
    ownership, state, data flow, lifecycle, extension points, coupling, failure modes. Refuse
    to let fuzzy language slide. Surface and resolve open architectural questions *before*
@@ -37,7 +37,7 @@ skill is to never let that happen again: **all questions are raised up front.**
    implementation agent prompt.
 5. **Full run, then ONE review.** Complete the entire pipeline — investigate → design →
    plan → implement everything — and only then run a single consolidated code review. Do NOT
-   review per task or per line item. (This is the deliberate departure from `rr:workshop`.)
+   review per task or per line item.
 6. **Two human gates, then unattended.** Gate 1: after the design spec. Gate 2: after the
    implementation pre-flight (task graph + dedicated integration branch presented, explicit
    launch approval). After Gate 2, the workflow runs fully unattended to completion.
@@ -60,7 +60,7 @@ skill is to never let that happen again: **all questions are raised up front.**
 |---|---|---|---|
 | 0. Describe | user | user | the seed: symptom / change / question |
 | 1. Investigate | read code + `core:codebase-research` / `Explore` subagents | orchestrator + subagents | grounding for grilling |
-| 2. Grill | `rr:grill` (exhaustive, architecture-first) | orchestrator ↔ user | `grill/CONTEXT.md`, `grill/adr/` |
+| 2. Grill | one-question-at-a-time interrogation (exhaustive, architecture-first) | orchestrator ↔ user | resolved terminology/decisions, carried into the Stage 3 design spec |
 | 3. Design | synthesize answers into a spec; defend each choice | orchestrator (may dispatch design subagents) | `specs/<date>-<slug>-design.md` → **HUMAN GATE** |
 | 4. Plan | `superpowers:writing-plans` | orchestrator (may dispatch a planning subagent) | `plans/<date>-<slug>.md` |
 | 5. Implement | `orchestrated-run.js` (shipped workflow) | orchestrator launches; workflow runs unattended | code + commits on `SOURCE` (integration branch) → **LAUNCH GATE** |
@@ -82,7 +82,7 @@ model when unsure.
 
 ## Artifacts (ledger on disk)
 
-All outputs live under `<scope>/.ledger/<slug>/` with subdirs `grill/`, `specs/`, `plans/`,
+All outputs live under `<scope>/.ledger/<slug>/` with subdirs `specs/`, `plans/`,
 `review/`. `<slug>` is a kebab-case name for the run; `<scope>` is the repo root (or a
 narrower path if the work is confined to one project). Compute `<date>` as `YYYY-MM-DD`. This
 skill **never reads or modifies `.gitignore`** — committing or ignoring `.ledger/` is the
