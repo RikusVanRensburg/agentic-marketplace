@@ -14,13 +14,12 @@ Compact the current session into a written handover document a fresh agent can a
 - In-session conversation compaction → use `/compact`.
 - Per-feature specs before building → use `superpowers:brainstorming`.
 - Implementation plans → use `superpowers:writing-plans`.
-- Durable domain canon (glossary, ADRs) → use `rr:grill`.
 
 ## Hard rules — never violate
 
 - **You are the writer.** Only you have full conversation context. Sub-agents draft *nothing*.
 - **Always run the three reviewers.** No shortcut, no `--quick` mode. Peer review is the point.
-- **Default location:** `<git-root>/docs/handovers/YYYY-MM-DD-HHMMSS-<slug>.md`. Callers MAY override with a leading `--target <abs-path>` token in `$ARGUMENTS` (used by orchestrators like `rr:workshop`); standalone use never saves elsewhere.
+- **Default location:** `<git-root>/docs/handovers/YYYY-MM-DD-HHMMSS-<slug>.md`. Callers MAY override with a leading `--target <abs-path>` token in `$ARGUMENTS` (used by orchestrators like `rr:orchestrated-run`); standalone use never saves elsewhere.
 - **Never read or write `.gitignore`.** The user owns their gitignore policy. The skill makes no checks and emits no recommendations about it.
 - **Never write secrets to the file.** The safety reviewer will catch leaks; redact before saving.
 - **Reference artifacts by path/URL — do not duplicate them.** PRs, plans, ADRs, issues.
