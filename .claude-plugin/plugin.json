@@ -1,0 +1,17 @@
+{
+  "name": "rr-workshop",
+  "description": "RR's workshop: the orchestrated-run pipeline on GitHub Issues — wayfinding, spec, issues, implementation",
+  "version": "0.1.0",
+  "author": {
+    "name": "RR"
+  },
+  "repository": "https://github.com/flow-software/flow-agentic-resources",
+  "license": "MIT",
+  "keywords": ["flow", "personal", "rr", "workshop"],
+  "skills": "./skills/",
+  "commands": [],
+  "agents": [],
+  "hooks": {},
+  "mcpServers": {},
+  "lspServers": {}
+}
