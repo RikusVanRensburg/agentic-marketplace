@@ -30,8 +30,9 @@ The workflow takes **no** human input once running; every ambiguity is resolved 
 2. **Build the dependency graph.** Edges, in priority order: (1) explicit `## Blocked by` references, (2) the order slices are listed in the parent body, (3) ascending issue number as tiebreaker. Detect cycles; resolve any with the user.
 3. **Create SOURCE — a dedicated integration branch.** Record **BASE**, the human's current branch. On a resume, reuse the existing SOURCE **as-is — never reset it**; otherwise create it fresh from BASE's HEAD (`git branch orch/<slug>-integration <BASE>`). SOURCE must not be checked out anywhere — the workflow's worktree-based integration deadlocks against a checked-out SOURCE.
 4. **Pre-resolve every task branch.** `orch/<slug>-task-<n>-<title-slug>` — unique, never equal to SOURCE. Where the repo documents its own naming (`docs/agents/branches.md`), map to that convention instead. These travel as `args.graph[<n>].branch`; DEV agents take them as givens and never prompt.
-5. **Grill residual ambiguity to zero** via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requirements, doubtful edges, environment or credential needs — anything an unattended agent would otherwise guess.
-6. **Present and get explicit launch approval (GATE 2).** The graph, the branch map, SOURCE/BASE, the fan-out order, and the `closeOnIntegrate` choice (default `false` — integrate comments, the caller closes at merge-back; `true` only when SOURCE is the real destination branch). The approval message is the human's go/no-go.
+5. **Resolve the worktree parent.** Compute `worktreeParent = dirname( git rev-parse --show-toplevel )` — the directory **one level up from the repo root** — and pass it as `args.worktreeParent`. Every worktree the run creates (dev, QA, integrate, review, remediate) is placed there, never in a temp dir, so its gitdir link stays reachable and cleanup is trivial. This resolves correctly for a standard host clone (worktrees become repo siblings) and for a bare-on-host layout (worktrees become siblings of `.bare`). Bare **inside a devcontainer** is out of scope.
+6. **Grill residual ambiguity to zero** via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requirements, doubtful edges, environment or credential needs — anything an unattended agent would otherwise guess.
+7. **Present and get explicit launch approval (GATE 2).** The graph, the branch map, SOURCE/BASE, `worktreeParent`, the fan-out order, and the `closeOnIntegrate` choice (default `false` — integrate comments, the caller closes at merge-back; `true` only when SOURCE is the real destination branch). The approval message is the human's go/no-go.
 
 ## Stage 2 — Launch the shipped workflow
 
@@ -43,6 +44,7 @@ Workflow({
   args: {
     parent: '<parent issue URL>',
     source: '<SOURCE>',
+    worktreeParent: '<dirname of the repo root — one level up>',
     graph: { <issueNumber>: { deps: [<issue numbers>], title: '<title>', branch: '<pre-resolved branch>' }, ... },
     // optional: ladder, closeOnIntegrate, and the resume channel: integrated / answers / finalReviewDone
   },

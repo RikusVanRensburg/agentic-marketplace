@@ -1,9 +1,9 @@
 export const meta = {
   name: 'orchestration',
   description: 'Implement every sub-issue of a GitHub breakdown: dependency-ordered dev (inline TDD, sonnet-first escalating model ladder) -> independent QA (opus) -> serialized verified git merge into a dedicated integration branch (opus), then a final integrated review (fable, terse verdicts) with ladder-bounded remediation - circuit breaker and structured blockers throughout',
-  whenToUse: 'Launched by rr-workshop:orchestration after its interactive pre-flight (Gate 2). Static script - never edited per run (ADR 0002); all per-run data arrives via args: { parent, source, graph, ladder?, closeOnIntegrate?, integrated?, answers?, finalReviewDone? }.',
+  whenToUse: 'Launched by rr-workshop:orchestration after its interactive pre-flight (Gate 2). Static script - never edited per run (ADR 0002); all per-run data arrives via args: { parent, source, worktreeParent, graph, ladder?, closeOnIntegrate?, integrated?, answers?, finalReviewDone? }.',
   phases: [
-    { title: 'Build', detail: 'dev (TDD, worktree-isolated, ladder model) + independent QA (opus) per issue' },
+    { title: 'Build', detail: 'dev (TDD, own worktree off SOURCE at the set location, ladder model) + independent QA (opus) per issue' },
     { title: 'Integrate', detail: 'serialized git merge into SOURCE, post-merge verify, tracker comment - in dependency order', model: 'opus' },
     { title: 'Final Review', detail: 'isolated review of the integrated whole + ladder-bounded remediation', model: 'fable' },
   ],
@@ -22,6 +22,11 @@ export const meta = {
 //                                                   //   attempt below deadlocks against it). DEV forks task branches
 //                                                   //   from it, integration merges into it; the caller merges it back
 //                                                   //   into BASE interactively once the workflow returns.
+//   worktreeParent: '/abs/dir/one-up-from-repo-root', // required: dirname(`git rev-parse --show-toplevel`) - the
+//                                                   //   directory ONE LEVEL UP from the repo root. EVERY worktree this
+//                                                   //   run creates (dev/QA/integrate/review/remediate) is placed here,
+//                                                   //   never in an arbitrary temp dir, so its gitdir link stays
+//                                                   //   reachable and cleanup is trivial. Computed in pre-flight.
 //   graph: { 124: { deps: [],    title: 'Core DTO', branch: 'orch/<slug>-task-124-core-dto' },
 //            125: { deps: [124], title: 'Endpoint', branch: 'orch/<slug>-task-125-endpoint' } },
 //                                                   // required: issue numbers -> { deps, title, branch }. No
@@ -51,6 +56,8 @@ const PARENT = input.parent
 const SOURCE = input.source
 if (typeof PARENT !== 'string' || !PARENT.trim()) throw new Error('orchestration: args.parent (string) is required')
 if (typeof SOURCE !== 'string' || !SOURCE.trim()) throw new Error('orchestration: args.source (string) is required')
+const WT_PARENT = input.worktreeParent
+if (typeof WT_PARENT !== 'string' || !WT_PARENT.trim()) throw new Error('orchestration: args.worktreeParent (string) is required - the directory ONE LEVEL UP from the repo root (dirname of `git rev-parse --show-toplevel`), where all task/QA/integration worktrees are created')
 if (!input.graph || typeof input.graph !== 'object' || Array.isArray(input.graph) || !Object.keys(input.graph).length) {
   throw new Error('orchestration: args.graph (non-empty object of issueNumber -> { deps, title, branch }) is required')
 }
@@ -130,6 +137,14 @@ if (input.ladder !== undefined) {
   LADDER = input.ladder
 }
 
+// Worktree placement: every worktree this run creates lives at the SET location args.worktreeParent
+// (one level up from the repo root), never in an arbitrary temp dir - a reachable, easily-cleaned spot
+// whose relative gitdir link resolves in standard and bare-on-host layouts alike. Names are keyed by
+// SOURCE (run-specific) + purpose + issue, so concurrent worktrees in a shared parent never collide.
+const WT_BASE = WT_PARENT.trim().replace(/[\\/]+$/, '')
+const WT_TAG = SOURCE.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'orch'
+const wtPath = (purpose, id) => `${WT_BASE}/${WT_TAG}-${purpose}${id != null ? '-' + id : ''}`
+
 const handoff = {}   // issueNumber -> note string (passed to dependent DEV prompts ONLY)
 const status = {}    // issueNumber -> 'integrated' | 'blocked'
 const blockers = []  // structured escalation records
@@ -190,16 +205,18 @@ function devPrompt(n, priorDefects) {
   const note = GRAPH[n].deps.map((d) => handoff[d]).filter(Boolean).join('\n\n')
   const ans = blockerAnswers[n] ? `\nResolved clarification from the human: ${blockerAnswers[n]}` : ''
   const redo = priorDefects ? `\n\nPrevious QA REJECTED with: ${JSON.stringify(priorDefects)} - fix exactly these.` : ''
+  const wt = wtPath('dev', n)
   return [
-    `Implement issue #${n} ("${GRAPH[n].title}"), a sub-issue of ${PARENT}. You run in your OWN isolated git worktree, so you cannot collide with other DEV agents.`,
+    `Implement issue #${n} ("${GRAPH[n].title}"), a sub-issue of ${PARENT}.`,
+    `WORK IN YOUR OWN WORKTREE so you cannot collide with other DEV agents running in parallel. From the repository root (your current directory), create it at the SET location '${wt}' (one level up from the repo root): first clear any stale worktree there - run 'git worktree remove --force ${wt}' (ignore the error if none exists), then 'git worktree prune' - then 'git worktree add -B ${GRAPH[n].branch} ${wt} ${SOURCE}'. That creates the worktree on branch '${GRAPH[n].branch}', reset fresh FROM '${SOURCE}' (-B, not -b: a prior rejected round may have left the branch behind; '${SOURCE}' already contains every integrated upstream slice you build on). Then 'cd ${wt}' and do ALL work there. Do NOT modify files in your starting directory, and never cd into another clone or worktree of this repo.`,
     `Read FRESH before writing any code: issue #${n}'s body + ALL its comments + acceptance criteria (gh issue view ${n} --comments); the parent's body + ALL its comments; and every sibling sub-issue's title and criteria (to respect the boundaries between slices). The acceptance criteria + parent spec ARE the approved contract - do NOT wait for any user approval; this is an unattended orchestrated run.`,
-    `BRANCH BASE IS NON-NEGOTIABLE: create the branch FROM '${SOURCE}' (git checkout -B ${GRAPH[n].branch} ${SOURCE} - use -B, not -b: a prior rejected round may have left this branch name behind, and -B resets it fresh from SOURCE instead of erroring) inside your assigned worktree - never from main or whatever HEAD you find; '${SOURCE}' already contains every integrated upstream slice you build on. Perform ALL git operations inside your assigned worktree directory - never cd into another clone or worktree of this repo.`,
     `If the repo defines a state: label taxonomy, mark the issue in progress (gh issue edit ${n} --add-label "state: in-progress" --remove-label "state: ready-for-agent"); if the labels don't exist, skip silently - never create labels.`,
     `Work TEST-FIRST, red-green-refactor: for each acceptance criterion write a failing test FIRST and watch it fail (red), write the minimum code that makes it pass (green), then refactor while staying green. No implementation code without a failing test demanding it.`,
     `Do NOT spawn any QA sub-agent - you cannot spawn sub-agents; an independent QA stage runs after you return.`,
     note ? `Upstream handoff (dependencies already integrated):\n${note}` : '',
     ans,
     `When the FULL test suite passes (not just your new tests), COMMIT your work to branch '${GRAPH[n].branch}' with a conventional-commit message and NO Claude/Anthropic/Co-Authored-By attribution. Do NOT merge into ${SOURCE} - integration is a separate serialized stage.`,
+    `After committing, clean up: cd back to the repository root and run 'git worktree remove --force ${wt}'. Your branch '${GRAPH[n].branch}' and its commit persist in the shared repo (a later stage reads them); only the worktree directory is removed.`,
     `Return: the branch name, inProgressSet (did you set state: in-progress?), committed (did you commit?), a 1-3 sentence summary, any new files/APIs downstream issues will touch, and any out-of-scope TODOs.`,
     redo,
   ].filter(Boolean).join('\n')
@@ -209,10 +226,11 @@ function devPrompt(n, priorDefects) {
 // self-report, or handoff note - QA's value IS its independence. The defending-findings clause is inlined
 // (a fresh sub-agent cannot resolve the plugin-internal DEFEND-PREAMBLE.md path).
 function qaPrompt(n, branch) {
+  const wt = wtPath('qa', n)
   return [
     `Independently QA issue #${n}, a sub-issue of ${PARENT}. Form your OWN picture from the source of truth - do not trust any prior report; you have deliberately been told nothing about how the implementation went.`,
     `Read FRESH before judging: issue #${n}'s body + ALL its comments + acceptance criteria; the parent's body + ALL its comments; and every sibling sub-issue's acceptance criteria (to catch overlap or contradiction).`,
-    `The implementation is committed on branch '${branch}'. Inspect it via a TEMPORARY detached worktree (git worktree add --detach <tmpdir> ${branch}; git worktree remove <tmpdir> when done) - NEVER switch the branch of an existing checkout or cd into another clone of this repo. In that worktree: build from a CLEAN state, run the full test suite, and verify EACH acceptance criterion against the parent's intent.`,
+    `The implementation is committed on branch '${branch}'. Inspect it via a detached worktree at the SET location '${wt}' (one level up from the repo root): clear any stale worktree there first ('git worktree remove --force ${wt}', ignore the error if none exists; then 'git worktree prune'), then 'git worktree add --detach ${wt} ${branch}', and 'git worktree remove --force ${wt}' when done - NEVER switch the branch of an existing checkout or cd into another clone of this repo. In that worktree: build from a CLEAN state, run the full test suite, and verify EACH acceptance criterion against the parent's intent.`,
     `Every defect you report is guilty until proven: state it as a falsifiable claim, cite the evidence that convicts it (file:line, failing command output), and attack your own case before reporting it - report only defects that survive, each with its evidence inline. Never assert without proof.`,
     `Return pass:true ONLY if it builds, all tests pass, and every acceptance criterion is met; otherwise pass:false with the specific defect list.`,
   ].join('\n')
@@ -224,9 +242,11 @@ async function buildIssue(n) {
   const rounds = []        // per-round escalation record, carried into any blocker for the post-run grilling
   for (let round = 1; round <= LADDER.length; round++) {
     const tier = LADDER[round - 1]
-    // isolation:'worktree' gives each DEV its own working tree, so concurrent `git checkout -B` is safe.
+    // Each DEV creates its OWN worktree at the set location off SOURCE (see devPrompt), so concurrent DEVs
+    // never collide - we place the worktree ourselves rather than relying on isolation:'worktree' (whose
+    // location is uncontrollable and which forks from origin/HEAD, not SOURCE).
     // model: the ladder rung for this round - QA rejections climb it (reactive escalation, not predictive).
-    const dev = await agent(devPrompt(n, priorDefects), { label: `dev:#${n}:r${round}:${tier}`, phase: 'Build', schema: DEV_SCHEMA, isolation: 'worktree', model: tier })
+    const dev = await agent(devPrompt(n, priorDefects), { label: `dev:#${n}:r${round}:${tier}`, phase: 'Build', schema: DEV_SCHEMA, model: tier })
     if (!dev) {
       if (!infraRetried) { infraRetried = true; round--; continue } // retry the SAME rung - don't burn a rung on infrastructure
       status[n] = 'blocked'; blockers.push({ issue: n, reason: 'dev agent unavailable (infrastructure, after same-rung retry)', rounds }); return null
@@ -282,8 +302,9 @@ while (ready().length) {
   const built = await parallel(wave.map((n) => () => buildIssue(n)))
   phase('Integrate')
   for (const b of built.filter(Boolean)) {
+    const wt = wtPath('integrate', b.issue)
     const intg = await agent([
-      `Integrate issue #${b.issue} (${GRAPH[b.issue].title}), a sub-issue of ${PARENT}. Work in a TEMPORARY worktree for the target branch (git worktree add <tmpdir> ${SOURCE}; git worktree remove <tmpdir> when done) - NEVER switch the branch of an existing checkout and never cd into another clone of this repo. If the add fails because '${SOURCE}' is checked out elsewhere, use a detached worktree (git worktree add --detach <tmpdir> ${SOURCE}), merge on its detached HEAD, and on success update the branch ref from inside it: git push . HEAD:refs/heads/${SOURCE}`,
+      `Integrate issue #${b.issue} (${GRAPH[b.issue].title}), a sub-issue of ${PARENT}. Work in a worktree at the SET location '${wt}' (one level up from the repo root): clear any stale worktree there first ('git worktree remove --force ${wt}', ignore the error if none exists; then 'git worktree prune'), then 'git worktree add ${wt} ${SOURCE}' (and 'git worktree remove --force ${wt}' when done) - NEVER switch the branch of an existing checkout and never cd into another clone of this repo. If the add fails because '${SOURCE}' is checked out elsewhere, use a detached worktree ('git worktree add --detach ${wt} ${SOURCE}'), merge on its detached HEAD, and on success update the branch ref from inside it: git push . HEAD:refs/heads/${SOURCE}`,
       `In that worktree: note the current HEAD of '${SOURCE}', then merge branch '${b.branch}' into it using git DIRECTLY - do NOT use the approval-gated /commit skill (a workflow cannot answer its prompt).`,
       `If the merge conflicts, do NOT force or guess: abort the merge and return ok:false with the conflicting file paths.`,
       `After a clean merge, VERIFY it: build and run the full test suite on '${SOURCE}'. A textually clean merge can still be semantically broken by sibling slices that landed after this branch forked. If the suite is red, undo the merge (git reset --hard to the pre-merge HEAD you noted), post NO comment, close nothing, and return ok:false with failureSummary.`,
@@ -326,11 +347,12 @@ const unintegrated = nums().filter((n) => status[n] !== 'integrated' && !already
 // never grades its own work. A null result is infrastructure, not a verdict: one same-judgment retry, then
 // 'unavailable' (which the caller MUST surface as a blocker - an ungraded state is never a clean run).
 const runFinalReview = async (round) => {
+  const wt = wtPath('review')
   const prompt = [
     `Final review of ${PARENT} as integrated on branch '${SOURCE}'. Form your OWN picture from the source of truth - you know nothing about how the implementation went, and that is deliberate.`,
     `Read FRESH: the parent's body + ALL its comments, and every sub-issue's body + acceptance criteria.`,
     unintegrated.length ? `OUT OF SCOPE: sub-issues ${unintegrated.map((n) => `#${n}`).join(', ')} did NOT integrate in this run and are already escalated to a human. Judge ONLY the integrated work - do NOT emit findings about those issues' missing functionality.` : '',
-    `Inspect '${SOURCE}' via a TEMPORARY detached worktree (git worktree add --detach <tmpdir> ${SOURCE}; remove it when done) - never switch an existing checkout's branch or cd into another clone of this repo. In it: build from a CLEAN state, run the FULL test suite, and review correctness, security, and edge cases - judging whether the integrated whole meets the parent's intent, especially interactions BETWEEN slices, which per-issue review structurally cannot see.`,
+    `Inspect '${SOURCE}' via a detached worktree at the SET location '${wt}' (one level up from the repo root): clear any stale worktree there first ('git worktree remove --force ${wt}', ignore the error if none exists; then 'git worktree prune'), then 'git worktree add --detach ${wt} ${SOURCE}' (and 'git worktree remove --force ${wt}' when done) - never switch an existing checkout's branch or cd into another clone of this repo. In it: build from a CLEAN state, run the FULL test suite, and review correctness, security, and edge cases - judging whether the integrated whole meets the parent's intent, especially interactions BETWEEN slices, which per-issue review structurally cannot see.`,
     `Every finding is guilty until proven: verify it in the code before emitting it, and attack your own case first - a false finding burns a remediation round. Return pass:true ONLY if it builds, the suite is green, and the integrated work meets the parent's intent; otherwise pass:false with findings. Do NOT fix anything yourself - a separate remediation stage acts on your findings.`,
     `Your OUTPUT is billed at a premium - be terse everywhere: no narration, no restating the spec, no praise, no code blocks, minimal intermediate notes. Each finding is ONE line: file:line (or module) - what is wrong - the expected behavior per the spec/criterion it violates - a fix pointer if obvious. That one line must let a cheaper remediation agent fix it WITHOUT re-investigating. Terse never means lenient or incomplete: report EVERY real defect - you are the gate that blocks bad code - and nothing that is not a defect.`,
   ].filter(Boolean).join('\n')
@@ -356,11 +378,12 @@ if (anyIntegrated && !input.finalReviewDone) {
   let fixerInfraRetried = false
   for (let round = 1; finalReview.status === 'fail' && round <= LADDER.length; round++) {
     const tier = LADDER[round - 1]
+    const wt = wtPath('remediate')
     const fix = await agent([
       `Remediate final-review findings for ${PARENT} on branch '${SOURCE}'. The per-issue work is already merged and recorded on the tracker - do NOT open, close, reopen, comment on, or create issues; fix the integrated code itself.`,
       `Findings to fix (fix ONLY these - no scope creep):\n${finalReview.findings.map((f, i) => `${i + 1}. ${f}`).join('\n')}`,
       blockerAnswers.FINAL ? `Resolved guidance from the human: ${blockerAnswers.FINAL}` : '',
-      `Work in a TEMPORARY worktree of '${SOURCE}' (git worktree add <tmpdir> ${SOURCE}; remove it when done) - never switch an existing checkout's branch or cd into another clone of this repo. If the add fails because '${SOURCE}' is checked out elsewhere, use a detached worktree (git worktree add --detach <tmpdir> ${SOURCE}), commit on its detached HEAD, then update the branch ref from inside it: git push . HEAD:refs/heads/${SOURCE}`,
+      `Work in a worktree of '${SOURCE}' at the SET location '${wt}' (one level up from the repo root): clear any stale worktree there first ('git worktree remove --force ${wt}', ignore the error if none exists; then 'git worktree prune'), then 'git worktree add ${wt} ${SOURCE}' (and 'git worktree remove --force ${wt}' when done) - never switch an existing checkout's branch or cd into another clone of this repo. If the add fails because '${SOURCE}' is checked out elsewhere, use a detached worktree ('git worktree add --detach ${wt} ${SOURCE}'), commit on its detached HEAD, then update the branch ref from inside it: git push . HEAD:refs/heads/${SOURCE}`,
       `Run the FULL test suite; commit to '${SOURCE}' ONLY when green, with a conventional-commit message and NO Claude/Anthropic/Co-Authored-By attribution.`,
       `Return committed (true ONLY if a green fix is committed), commitRef, and a 1-3 sentence summary.`,
     ].filter(Boolean).join('\n'), { label: `remediate:r${round}:${tier}`, phase: 'Final Review', schema: REMEDIATE_SCHEMA, model: tier })
