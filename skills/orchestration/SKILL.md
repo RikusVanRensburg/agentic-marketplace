@@ -6,14 +6,14 @@ description: Implement an existing GitHub-issue breakdown unattended — ready-f
 The **breakdown** exists; now drive **every** slice to done, unattended, by launching the **dynamic workflow shipped with this skill** ([orchestration.js](orchestration.js)). Its machinery is what makes AFK-with-merge safe — each piece closes a gap that would otherwise rightly make an agent refuse to merge unattended:
 
 - **Independent QA** per slice — a fresh agent forms its own picture from the issue tree and never sees the dev's report.
-- **Verified merge** — integration builds and runs the full suite on SOURCE and resets on red; nothing reaches the tracker for an unverified merge.
-- **Dedicated SOURCE** — every task branch forks from the integration branch (never stacked on a sibling, never the human's branch), and merges land on it serially in dependency order.
+- **Verified merge** — integration builds and runs the full suite on SOURCE and resets on red; nothing closes for an unverified merge.
+- **Dependency-ordered** — every task branch forks from SOURCE (never stacked on a sibling), and merges land on it serially in dependency order.
 - **Escalation ladder + circuit breaker** — a QA rejection climbs the dev model one rung; a rejection at the top rung halts only that slice's dependency branch, with a structured **blocker**.
-- **Resume** — a relaunch is idempotent: the script reconciles against git and the tracker before spending any agent.
+- **Resume** — a relaunch is idempotent: the script reconciles against the tracker before spending any agent.
 
 It runs in **two stages**: an interactive **pre-flight** in this session, then a launched workflow that runs unattended.
 
-**Standing rule:** `rr-workshop:defending-findings` applies throughout — the pre-flight defends every edge and branch decision before launch, and the script inlines the discipline into its QA and review prompts (a defect ships only with file:line evidence that survived self-attack).
+**Standing rule:** `rr-workshop:defending-findings` applies to **pre-flight** — every edge and branch decision is defended before launch. The unattended QA and Final Review stages are deliberately cheaper: they return a plain pass/fail with a defect list, with no per-issue adversarial self-attack ritual — that cost belongs to the one-time graph decisions, not to a check that reruns per issue, per rung.
 
 ## Prerequisites
 
@@ -28,11 +28,9 @@ The workflow takes **no** human input once running; every ambiguity is resolved 
 
 1. **Read the whole tree.** The parent's body + **all** comments; enumerate every sub-issue (`--paginate`) and read each body + **all** comments + acceptance criteria.
 2. **Build the dependency graph.** Edges, in priority order: (1) explicit `## Blocked by` references, (2) the order slices are listed in the parent body, (3) ascending issue number as tiebreaker. Detect cycles; resolve any with the user.
-3. **Create SOURCE — a dedicated integration branch.** Record **BASE**, the human's current branch. On a resume, reuse the existing SOURCE **as-is — never reset it**; otherwise create it fresh from BASE's HEAD (`git branch orch/<slug>-integration <BASE>`). SOURCE must not be checked out anywhere — the workflow's worktree-based integration deadlocks against a checked-out SOURCE.
-4. **Pre-resolve every task branch.** `orch/<slug>-task-<n>-<title-slug>` — unique, never equal to SOURCE. Where the repo documents its own naming (`docs/agents/branches.md`), map to that convention instead. These travel as `args.graph[<n>].branch`; DEV agents take them as givens and never prompt.
-5. **Resolve the worktree parent.** Compute `worktreeParent = dirname( git rev-parse --show-toplevel )` — the directory **one level up from the repo root** — and pass it as `args.worktreeParent`. Every worktree the run creates (dev, QA, integrate, review, remediate) is placed there, never in a temp dir, so its gitdir link stays reachable and cleanup is trivial. This resolves correctly for a standard host clone (worktrees become repo siblings) and for a bare-on-host layout (worktrees become siblings of `.bare`). Bare **inside a devcontainer** is out of scope.
-6. **Grill residual ambiguity to zero** via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requirements, doubtful edges, environment or credential needs — anything an unattended agent would otherwise guess.
-7. **Present and get explicit launch approval (GATE 2).** The graph, the branch map, SOURCE/BASE, `worktreeParent`, the fan-out order, and the `closeOnIntegrate` choice (default `false` — integrate comments, the caller closes at merge-back; `true` only when SOURCE is the real destination branch). The approval message is the human's go/no-go.
+3. **Pre-resolve branches + source.** The workflow takes no mid-run input, so every branch decision must be made now. For each issue compute a deterministic branch name (using the pattern recorded in `docs/agents/branches.md` if it exists) and settle the single `SOURCE` branch DEV forks from and integration merges into. These travel as `args.graph[<n>].branch` and `args.source`; DEV agents take them as givens and never prompt.
+4. **Grill residual ambiguity to zero** via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requirements, doubtful edges, environment or credential needs — anything an unattended agent would otherwise guess.
+5. **Present and get explicit launch approval (GATE 2).** The graph, the resolved branches/source, and the fan-out order. The approval message is the human's go/no-go.
 
 ## Stage 2 — Launch the shipped workflow
 
@@ -44,9 +42,8 @@ Workflow({
   args: {
     parent: '<parent issue URL>',
     source: '<SOURCE>',
-    worktreeParent: '<dirname of the repo root — one level up>',
     graph: { <issueNumber>: { deps: [<issue numbers>], title: '<title>', branch: '<pre-resolved branch>' }, ... },
-    // optional: ladder, closeOnIntegrate, and the resume channel: integrated / answers / finalReviewDone
+    // optional: ladder, and the resume channel: integrated / answers / finalReviewDone
   },
 })
 ```
@@ -59,27 +56,23 @@ Why the ladder and gates are shaped this way: dev is the output-heavy stage, so 
 
 Read the final report and relay it. Then:
 
-- **Closing.** With `closeOnIntegrate: false` (the default), integrated issues are still open, each carrying an "integrated into `<SOURCE>` at `<sha>`" comment — the **caller** closes them at merge-back (`rr-workshop:orchestrated-run` in the pipeline; the user standalone).
 - **Blockers.** For each structured blocker, grill the user via `rr-workshop:grilling`, then relaunch the same Workflow call with the resume channel: `integrated` (already-merged issue numbers), `answers` (issue number → clarification; the literal key `FINAL` carries final-review guidance), and `finalReviewDone: true` when a prior run already delivered the verdict.
-- **Resume is same-session only.** A dead session cannot resume the workflow in place — but relaunching with the same args is idempotent: the script's live reconcile (git-ancestor check per task branch, plus a closed-issue check on the tracker) skips everything already landed.
+- **Resume is same-session only.** A dead session cannot resume the workflow in place — but relaunching with the same args is idempotent: the script's live reconcile (a closed-issue check on the tracker) skips everything already landed.
 
 ## Boundaries
 
 - Creates no issues and edits no issue bodies — a missing or wrong breakdown goes back to `rr-workshop:to-issues`.
-- Never merges SOURCE into BASE — merge-back is interactive and owned by the caller.
 - No Claude/Anthropic/Co-Authored-By attribution in any commit message or issue comment, anywhere in the run.
 
 ## Red flags — STOP
 
 - About to edit `orchestration.js` for this run — per-run variation travels in `args`.
-- `source` set to BASE or any branch a human has checked out — SOURCE is always a dedicated integration branch.
 - The Workflow call forming before the explicit launch-approval message exists.
 - A sub-issue whose body and comments were never read in pre-flight.
-- Resetting or re-creating an existing SOURCE on a resume.
 - Implementing a slice in this session "because it's small".
 
 ## Done when
 
-- [ ] Pre-flight: every sub-issue read (body + all comments); graph acyclic and approved; SOURCE exists fresh from BASE (or reused untouched on resume) and is checked out nowhere; every task branch pre-resolved and unique; the explicit launch-approval message exists.
+- [ ] Pre-flight: every sub-issue read (body + all comments); graph acyclic and approved; every branch + source pre-resolved and unique; the explicit launch-approval message exists.
 - [ ] Launch: exactly one Workflow call, and the script accepted the args.
-- [ ] Post-run: the report relayed; every blocker grilled and relaunched, or explicitly handed to the user; nothing merged into BASE by this skill.
+- [ ] Post-run: the report relayed; every blocker grilled and relaunched, or explicitly handed to the user.
