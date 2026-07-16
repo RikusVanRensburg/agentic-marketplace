@@ -1,10 +1,11 @@
 ---
-name: backdated-github-issues
+name: librarian
 description: Migrate repo docs into GitHub issues that keep their original date — backdated created_at, created closed, linked to the introducing commit, full content inline. Use when the user wants to archive or move documentation into issues while preserving historical dates, mentions backdating issue created_at or the GitHub Issue Import API, or wants to re-run such a migration idempotently.
 ---
 
-Migrate documentation into GitHub issues that carry the doc's **original** creation date. Each
-issue is **backdated** (`created_at` = when the doc entered git), **created already closed**
+The **librarian** shelves documentation into GitHub issues that carry the doc's **original**
+creation date. Each issue is **backdated** (`created_at` = when the doc entered git), **created
+already closed**
 (archival — no triage, no notifications), **linked to the introducing commit**, and embeds the
 doc's **full content inline**. The source files are deleted afterward, so the issue *is the
 archive of record* — never a link to a file that will not exist.
@@ -91,7 +92,7 @@ In dependency order (parents first, so each child link references a real parent 
    the payload JSON (`title`, `body`, `created_at`/`updated_at`/`closed_at` = the resolved date,
    `closed: true`, `labels`), and import it:
    ```bash
-   "${CLAUDE_PLUGIN_ROOT}/skills/backdated-github-issues/scripts/gh-import.sh" payload.json
+   "${CLAUDE_PLUGIN_ROOT}/skills/librarian/scripts/gh-import.sh" payload.json
    ```
    which prints the new issue number (or hard-fails).
 3. If it is a child, **link and verify** it as a sub-issue of its parent using the exact

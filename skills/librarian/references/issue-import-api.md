@@ -1,7 +1,7 @@
 # Issue Import API (golden-comet)
 
-The only GitHub endpoint that sets an issue's `created_at` to the past. `backdated-github-issues`
-rests entirely on it; `scripts/gh-import.sh` wraps the call + poll.
+The only GitHub endpoint that sets an issue's `created_at` to the past. `librarian` rests
+entirely on it; `scripts/gh-import.sh` wraps the call + poll.
 
 ## Why not the normal create
 
