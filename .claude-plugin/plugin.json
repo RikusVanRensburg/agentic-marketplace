@@ -10,7 +10,9 @@
   "keywords": ["flow", "personal", "rr", "workshop"],
   "skills": "./skills/",
   "commands": [],
-  "agents": [],
+  "agents": [
+    "./agents/librarian.md"
+  ],
   "hooks": {},
   "mcpServers": {},
   "lspServers": {}
