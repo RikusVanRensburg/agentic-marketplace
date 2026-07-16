@@ -1,11 +1,11 @@
 export const meta = {
   name: 'orchestration',
-  description: 'Implement every sub-issue of a GitHub breakdown: dependency-ordered dev (rr-workshop:build-with-tdd, sonnet-first escalating model ladder) -> independent QA (opus) -> serialized verified git merge into a dedicated integration branch (opus), then a final integrated review (fable, terse verdicts) with ladder-bounded remediation - circuit breaker and structured blockers throughout',
+  description: 'Implement every sub-issue of a GitHub breakdown: dependency-ordered dev (rr-workshop:build-with-tdd, sonnet-first escalating model ladder) -> independent QA (opus) -> serialized verified git merge into a dedicated integration branch (opus), then a final integrated review (opus, terse verdicts) with ladder-bounded remediation - circuit breaker and structured blockers throughout',
   whenToUse: 'Launched by rr-workshop:orchestration after its interactive pre-flight (Gate 2). Static script - never edited per run (ADR 0002); all per-run data arrives via args: { parent, source, graph, ladder?, integrated?, answers?, finalReviewDone? }.',
   phases: [
     { title: 'Build', detail: 'dev (rr-workshop:build-with-tdd, worktree-isolated, ladder model) + independent QA (opus) per issue' },
     { title: 'Integrate', detail: 'serialized git merge, post-merge verify, close - in dependency order', model: 'opus' },
-    { title: 'Final Review', detail: 'isolated review of the integrated whole + ladder-bounded remediation', model: 'fable' },
+    { title: 'Final Review', detail: 'isolated review of the integrated whole + ladder-bounded remediation', model: 'opus' },
   ],
 }
 
@@ -158,7 +158,7 @@ const FINAL_REVIEW_SCHEMA = {
   type: 'object', additionalProperties: false,
   properties: {
     pass: { type: 'boolean' },
-    // One line per finding - the judge is fable, which bills output at a premium; the format keeps verdicts cheap
+    // One line per finding - the judge is opus, a premium tier; the format keeps verdicts cheap
     // while still self-sufficient for a cheaper remediation agent to act on without re-investigating.
     findings: { type: 'array', items: { type: 'string', description: 'ONE line: file:line (or module) - defect - expected behavior per the parent spec/criterion it violates - fix pointer if obvious' } },
   },
@@ -221,7 +221,7 @@ async function buildIssue(n) {
       continue
     }
     // QA pinned opus at every rung - the climb gate must out-reason the dev tiers, and verdicts are
-    // output-light so the smart model is cheap here. The fable final review backstops the integrated whole.
+    // output-light so the smart model is cheap here. The opus final review backstops the integrated whole.
     const qa = await agent(qaPrompt(n, dev.branch), { label: `qa:#${n}:r${round}`, phase: 'Build', schema: QA_SCHEMA, model: 'opus' })
     if (!qa) {
       if (!infraRetried) { infraRetried = true; round--; continue } // a missing verdict must not escalate the ladder or trip the breaker
@@ -308,10 +308,10 @@ const runFinalReview = async (round) => {
     `Return pass:true ONLY if it builds, the suite is green, and the integrated work meets the parent's intent; otherwise pass:false with findings. Do NOT fix anything yourself - a separate remediation stage acts on your findings.`,
     `Your OUTPUT is billed at a premium - be terse everywhere: no narration, no restating the spec, no praise, no code blocks, minimal intermediate notes. Each finding is ONE line: file:line (or module) - what is wrong - the expected behavior per the spec/criterion it violates - a fix pointer if obvious. That one line must let a cheaper remediation agent fix it WITHOUT re-investigating. Terse never means lenient or incomplete: report EVERY real defect - you are the gate that blocks bad code - and nothing that is not a defect.`,
   ].filter(Boolean).join('\n')
-  // fable: the one gate worth the premium model - an integrated-whole judgment that blocks bad code from shipping.
-  // Verdicts are output-light and the prompt pins the output format, so its per-output-token premium stays small.
-  let fr = await agent(prompt, { label: round ? `final-review:r${round}` : 'final-review', phase: 'Final Review', schema: FINAL_REVIEW_SCHEMA, model: 'fable' })
-  if (!fr) fr = await agent(prompt, { label: `final-review${round ? `:r${round}` : ''}:retry`, phase: 'Final Review', schema: FINAL_REVIEW_SCHEMA, model: 'fable' })
+  // opus: the final gate runs opus - the same tier as per-issue QA and integration - an integrated-whole
+  // judgment that blocks bad code from shipping. Verdicts are output-light and the prompt pins the output format.
+  let fr = await agent(prompt, { label: round ? `final-review:r${round}` : 'final-review', phase: 'Final Review', schema: FINAL_REVIEW_SCHEMA, model: 'opus' })
+  if (!fr) fr = await agent(prompt, { label: `final-review${round ? `:r${round}` : ''}:retry`, phase: 'Final Review', schema: FINAL_REVIEW_SCHEMA, model: 'opus' })
   if (!fr) return { status: 'unavailable', findings: [] }
   const findings = (fr.findings && fr.findings.length) ? fr.findings
     : (fr.pass ? [] : ['Final review failed without listing findings - independently re-run the full suite and every acceptance criterion, identify the concrete failure, and fix it'])
