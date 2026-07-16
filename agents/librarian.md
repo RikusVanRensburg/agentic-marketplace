@@ -79,9 +79,11 @@ body (templates below), write a payload JSON, and import it. Build the payload w
 (reliable content escaping):
 
 ```bash
-python - "$DOCPATH" "$MARKER" "$TITLE" "$CREATED" "$SHA" "$SCOPE" "$STATE" > payload.json <<'PY'
+python - payload.json "$DOCPATH" "$MARKER" "$TITLE" "$CREATED" "$SHA" "$SCOPE" "$STATE" "$TYPE" <<'PY'
 import json, sys
-docpath, marker, title, created, sha, scope, state = sys.argv[1:8]
+out = sys.argv[1]
+docpath, marker, title, created, sha, scope, state = sys.argv[2:9]
+typ = sys.argv[9] if len(sys.argv) > 9 else ""
 date = created[:10]
 if docpath:  # file issue
     content = open(docpath, encoding="utf-8").read().rstrip("\n")
@@ -89,9 +91,12 @@ if docpath:  # file issue
 else:        # parent index (marker holds the folder)
     folder = marker.split()[2]
     body = f"{marker}\n\nArchive of the docs under `{folder}/`, migrated as backdated closed issues. Each document is a linked **sub-issue** of this one.\n\n---\n_Folder archive. Earliest doc introduced in {sha} on {date}._\n"
-labels = [scope, state] + ([sys.argv[8]] if len(sys.argv) > 8 and sys.argv[8] else [])
-json.dump({"issue": {"title": title, "body": body, "created_at": created,
-    "updated_at": created, "closed_at": created, "closed": True, "labels": labels}}, sys.stdout, ensure_ascii=False)
+labels = [scope, state] + ([typ] if typ else [])
+# Write payload as UTF-8 explicitly. A shell `> payload.json` redirect encodes sys.stdout with the
+# platform default (cp1252 on Windows) and dies on non-ASCII doc content (arrows, em-dashes).
+with open(out, "w", encoding="utf-8") as f:
+    json.dump({"issue": {"title": title, "body": body, "created_at": created,
+        "updated_at": created, "closed_at": created, "closed": True, "labels": labels}}, f, ensure_ascii=False)
 PY
 ```
 
