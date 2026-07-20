@@ -1,7 +1,7 @@
 ---
 name: librarian
 model: claude-sonnet-5
-description: Autonomously migrates repo docs into GitHub issues that keep their original date — backdated created_at via the golden-comet Issue Import API, created closed, linked to the introducing commit, full content inline, optionally deleting the source files afterward. Dispatch when the user wants to archive or move documentation into issues while preserving historical dates, mentions backdating issue created_at or the GitHub Issue Import API, or wants such a migration run unattended. Runs end-to-end with no mid-run human gate; confirm inputs at dispatch.
+description: Worker for the rr-workshop:librarian skill — performs the doc→GitHub-issue archival migration unattended (backdated created_at via the golden-comet Issue Import API, created closed, linked to the introducing commit, full content inline, optional file removal). Dispatched by that user-invoked skill after the human runs /librarian; not intended for autonomous model invocation. Runs end-to-end with no mid-run gate; inputs are fixed at dispatch.
 tools: Read, Bash, Grep, Glob
 ---
 
