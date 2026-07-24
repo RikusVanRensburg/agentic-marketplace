@@ -46,7 +46,6 @@ Any "No" disqualifies the lightweight path and the full gate applies.
 | Problem is still vague, no plan exists | `/explore-problem-space` |
 | Plan does not exist for a multi-step change | `/create-plan` |
 | Artifact already produced, want to evaluate it | `/review-implementation` |
-| Want to stress-test a formed position adversarially | `ze:red-team` |
 | Generating multiple options to choose from | `superpowers:brainstorming` |
 | Writing up a problem for a teammate | `/github_create-issue` |
 | Want to verify completion of work already produced | `superpowers:verification-before-completion` |
@@ -228,7 +227,6 @@ These rationalizations are framed in code terms but apply across artifact types 
 - **`/review-implementation`** — Runs *after* the artifact exists; the gate runs *before*. Same spirit, opposite side of the production boundary.
 - **`superpowers:verification-before-completion`** — Verifies completion claims ("evidence before assertions") *after* work is produced. The gate enforces evidence *before* production. Same evidence ethos, opposite side of the production boundary.
 - **`/github_create-issue`** — Its Phase 7 checks problem-statement readiness for an issue artifact, not production readiness. Different moment, different artifact.
-- **`ze:red-team`** — Adversarial stress test of a *formed position*. Optional companion for high-risk changes: run it on the plan **before** the gate to surface unknowns the gate then verifies.
 - **`superpowers:brainstorming`** — Divergent option generation. The gate is convergent: one plan, one score, one go / no-go.
 
 ## Anti-Patterns
