@@ -21,7 +21,6 @@ current and relevant.
 
 - In-session conversation compaction → `/compact`.
 - Cold session-end handover narrative → `rr:handover` (it hands off *to* the Archivist).
-- Resolving domain terminology / ADR canon → `rr:grill` (hands off *to* the Archivist).
 - Codebase `README.md` files → left as-is, in place. The Archivist never touches them.
 - Promoting the Ledger into the codebase → out of scope (a future, separate skill).
 
@@ -98,9 +97,9 @@ are rules, not suggestions — no exceptions unless absolutely required.
 
 ## Ingestion
 
-Producing skills (`rr:handover`, `rr:grill`, `rr:workshop`) hand their output to the
-Archivist rather than writing to `.ledger/` themselves — the Archivist is the sole
-writer. See `references/ingestion-contract.md`.
+Producing skills (`rr:handover`, and any future doc-producing skill) hand their output
+to the Archivist rather than writing to `.ledger/` themselves — the Archivist is the
+sole writer. See `references/ingestion-contract.md`.
 
 ## Common mistakes (the failures this skill prevents)
 
