@@ -21,7 +21,13 @@ source files are removed — so the issue *is the archive of record*.
 - **repo** — optional; default to the current clone (`gh` fills `{owner}/{repo}` from it).
 - **anchor** — `first-add` (default) or `latest`.
 - **scope** — label, default `scope: rr`. **state** — label, default `state: needs-triage`.
-  **type** — optional; omit unless given (a human assigns it at triage).
+  **type** — optional; omit unless given (a human assigns it at triage — as a native Issue
+  Type follow-up edit, coarse-mapped per [github-operations.md](../docs/github-operations.md)'s
+  "Native issue type" table; the import payload itself has no `type` field).
+- **assignee** — optional login; default to the dispatching user's own login (resolved once via
+  `gh api user --jq '.login'` — the import payload needs a literal login, not `@me`).
+- **milestone** — optional milestone name; attach **only** if it already exists (resolved to its
+  number via `gh api repos/{owner}/{repo}/milestones`) — never created.
 - **delete-after** — boolean, default **false**. Only when true do you remove files.
 - **mapping** — optional JSON of `{doc, commit, date}` overrides.
 
@@ -46,6 +52,12 @@ issue and defeat your whole purpose.
 Confirm `gh auth status` (authenticated, `repo` scope) and resolve the repo. Confirm **every**
 label you will apply already exists (`gh label list`); if one is missing, STOP and report it — the
 `type:`/`scope:`/`state:` taxonomy is pre-seeded team vocabulary you never create.
+
+Resolve **assignee** once: the given login, or `gh api user --jq '.login'` if none was given.
+
+Resolve **milestone** once, if given: look it up by name (`gh api repos/{owner}/{repo}/milestones
+--jq '.[] | select(.title == "<name>") | .number'`); if it doesn't exist, proceed **without**
+attaching one and tell the user — milestones are attach-only here, never created.
 
 ### 2. Build the marker map — once
 
@@ -79,11 +91,12 @@ body (templates below), write a payload JSON, and import it. Build the payload w
 (reliable content escaping):
 
 ```bash
-python - payload.json "$DOCPATH" "$MARKER" "$TITLE" "$CREATED" "$SHA" "$SCOPE" "$STATE" "$TYPE" <<'PY'
+python - payload.json "$DOCPATH" "$MARKER" "$TITLE" "$CREATED" "$SHA" "$SCOPE" "$STATE" \
+  "$ASSIGNEE" "$MILESTONE_NUMBER" "$TYPE" <<'PY'
 import json, sys
 out = sys.argv[1]
-docpath, marker, title, created, sha, scope, state = sys.argv[2:9]
-typ = sys.argv[9] if len(sys.argv) > 9 else ""
+docpath, marker, title, created, sha, scope, state, assignee, milestone_number = sys.argv[2:10]
+typ = sys.argv[10] if len(sys.argv) > 10 else ""
 date = created[:10]
 if docpath:  # file issue
     content = open(docpath, encoding="utf-8").read().rstrip("\n")
@@ -92,16 +105,20 @@ else:        # parent index (marker holds the folder)
     folder = marker.split()[2]
     body = f"{marker}\n\nArchive of the docs under `{folder}/`, migrated as backdated closed issues. Each document is a linked **sub-issue** of this one.\n\n---\n_Folder archive. Earliest doc introduced in {sha} on {date}._\n"
 labels = [scope, state] + ([typ] if typ else [])
+issue = {"title": title, "body": body, "created_at": created, "updated_at": created,
+    "closed_at": created, "closed": True, "labels": labels, "assignee": assignee}
+if milestone_number:
+    issue["milestone"] = int(milestone_number)
 # Write payload as UTF-8 explicitly. A shell `> payload.json` redirect encodes sys.stdout with the
 # platform default (cp1252 on Windows) and dies on non-ASCII doc content (arrows, em-dashes).
 with open(out, "w", encoding="utf-8") as f:
-    json.dump({"issue": {"title": title, "body": body, "created_at": created,
-        "updated_at": created, "closed_at": created, "closed": True, "labels": labels}}, f, ensure_ascii=False)
+    json.dump({"issue": issue}, f, ensure_ascii=False)
 PY
 ```
 
 (`$MARKER` is the full comment, e.g. `<!-- doc-id: docs/x.md -->`; for a parent pass an empty
-`$DOCPATH` and a `<!-- doc-group: docs/x -->` marker.) Then import + poll:
+`$DOCPATH` and a `<!-- doc-group: docs/x -->` marker. `$ASSIGNEE`/`$MILESTONE_NUMBER` are the
+values resolved once in Preflight — `$MILESTONE_NUMBER` empty when none fits.) Then import + poll:
 
 ```bash
 ACCEPT="Accept: application/vnd.github.golden-comet-preview+json"
@@ -119,12 +136,19 @@ for _ in $(seq 1 12); do
 done
 ```
 
-If it is a **child**, link it under its parent (the attach needs the child's integer `id`, not its
-number) and verify the link before moving on:
+If `$TYPE` was given, set the native Issue Type as a follow-up edit — the import payload has no
+`type` field, so this can only happen after the issue exists — coarse-mapped per
+[github-operations.md](../docs/github-operations.md)'s "Native issue type" table (e.g.
+`type: feat` → `Feature`):
 
 ```bash
-CID=$(gh api "repos/{owner}/{repo}/issues/$NUM" --jq '.id')
-gh api -X POST "repos/{owner}/{repo}/issues/$PARENT/sub_issues" -F sub_issue_id="$CID" >/dev/null
+[ -n "$TYPE" ] && gh issue edit "$NUM" --type "$NATIVE_TYPE" >/dev/null
+```
+
+If it is a **child**, set its parent and verify the link before moving on:
+
+```bash
+gh issue edit "$NUM" --parent "$PARENT" >/dev/null
 gh api --paginate "repos/{owner}/{repo}/issues/$PARENT/sub_issues" --jq '.[].number' \
   | grep -qx "$NUM" || { echo "LINK MISSING $NUM"; exit 1; }
 ```
@@ -147,6 +171,10 @@ run log), assuming each is wrong until the fetched state proves it right:
   footer) equals the **current file** on disk (Read it) — the SHA is provenance, not the content
   source, so do not compare against `git show <sha>`.
 - Footer cites the correct SHA + date; labels are exactly the intended set; the tree matches §5.
+- **Assignee** matches `$ASSIGNEE` (`gh api repos/{owner}/{repo}/issues/$NUM --jq '.assignee.login'`).
+- **Milestone** matches `$MILESTONE_NUMBER` when one was given (`--jq '.milestone.number'`);
+  when none was given, confirm it's still null — the import payload silently ignoring the
+  field would look identical to "correctly omitted" without this check.
 
 If any check fails, STOP, report the mismatch, and **delete nothing**.
 
@@ -165,4 +193,5 @@ Concise: created / skipped / failed, each with its issue URL; note any files rem
 - An import that failed or 404'd, and a non-backdated create forming as a "fallback".
 - Any file removed before §6 passed all-green.
 - Creating a missing `type:`/`scope:`/`state:` label — surface it and stop.
+- Creating a milestone that doesn't already exist — milestones are attach-only here, never created.
 - A file issue that links to its source file instead of embedding the current content.
