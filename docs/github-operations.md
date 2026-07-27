@@ -28,6 +28,26 @@ clone; a bare `OWNER/REPO` would 404 (unlike `gh issue`, `gh api` does not resol
 - **Close**: `gh issue close <n> --reason completed --comment "..."` — `--reason` accepts only
   `completed` or `not planned`.
 
+## Native issue type
+
+Separate from the `type:` label taxonomy, GitHub has a native per-org Issue Type field
+(`Task`/`Bug`/`Feature`/`PRD` in this org — check with `gh api orgs/{owner}/issue-types` if
+unsure). Set it with `gh issue create --type <name>` or `gh issue edit <n> --type <name>` /
+`--remove-type`. It is **coarser** than the `type:` label and additive to it, never a
+replacement:
+
+| `type:` label | native `type` |
+|---|---|
+| `feat` | `Feature` |
+| `fix` | `Bug` |
+| `refactor` | `Task` |
+| `chore` | `Task` |
+| `docs` | `Task` |
+| *(spec/PRD issues)* | `PRD` — unconditional, regardless of the spec's own `type:` label |
+
+A slice or wayfinder ticket keeps its full-granularity `type:` label unchanged; only the
+native field is coarse-mapped.
+
 ## Claiming — the assignee is the claim
 
 ```bash
@@ -36,6 +56,18 @@ gh issue edit <n> --add-assignee @me
 
 Run it **before any work** on the issue. An open issue with an empty `assignees` array is
 unclaimed; check via `gh issue view <n> --json assignees --jq '.assignees | length'`.
+
+## Assignee on creation
+
+Singleton parent issues with no claiming model — a wayfinder **map**, a to-spec **spec**, a
+librarian archival issue — get `--assignee @me` (or the resolved login, for the Import API)
+at creation: there is no frontier to break.
+
+**`to-issues` slices and wayfinder tickets are the opposite** — both use "unassigned =
+unclaimed" as their frontier signal (see "Claiming" above and "Frontier query" below).
+Auto-assigning their creator at creation would make every one of them look claimed
+immediately, permanently emptying the frontier. They stay unassigned at creation; assignment
+only happens at claim time, via `gh issue edit <n> --add-assignee @me`.
 
 ## Label create-if-missing
 
@@ -57,6 +89,15 @@ and are never created by a skill.
 ## Sub-issues (parent/child tree)
 
 The parent/child relationship is native GitHub, set via REST.
+
+**Prefer the `gh` CLI flags for the common case** — `gh issue create --parent <n>` (at
+creation) or `gh issue edit <n> --parent <n>` / `gh issue edit <parent> --add-sub-issue <n>`
+(after the fact) — one call, no manual `id` lookup. The raw REST mechanics below remain for
+reference, and because the verify step (below, and in "Create → verify") always checks
+`sub_issues` regardless of how the link was attached, verification doesn't change either way.
+To check a child's parent from its own JSON, use the issue payload's `parent_issue_url` field
+(or `gh issue view <n> --json parent`) — there is no `sub_issue_parent` key; a guessed key here
+reads as a false negative on a link that's actually fine.
 
 - **Attach a child to a parent** — needs the child's **integer `id`**, NOT its issue number
   (the most common footgun):
@@ -84,23 +125,20 @@ GitHub caps sub-issues at 100 per parent and 8 levels of nesting. Sub-issuing is
 it does not change the parent's state or body, and closing all children never auto-closes the
 parent.
 
-## Create → link → verify (per child, in order)
+## Create → verify (per child, in order)
 
-When creating a batch of children under a parent, run all three steps per child before moving
-to the next:
+`gh issue create --parent <n>` attaches the sub-issue relationship in the same call as
+creation — no separate lookup or POST needed. Still run both steps per child, fully, before
+moving to the next:
 
 ```bash
-# a. Create — capture the new issue's NUMBER (gh issue create prints the URL; the number is
-#    the trailing path segment):
+# a. Create — --parent attaches the sub-issue relationship in the same call. Capture the new
+#    issue's NUMBER (gh issue create prints the URL; the number is the trailing path segment):
 CHILD_NUMBER=$(gh issue create --title "..." --body-file <body>.md \
-  --label "<label>" | grep -oE '[0-9]+$')
+  --label "<label>" --parent PARENT_NUMBER | grep -oE '[0-9]+$')
 echo "$CHILD_NUMBER" >> CREATED          # accumulate for the closing verification below
 
-# b. Link — fetch the internal integer id (sub_issues needs the id, NOT the number):
-CHILD_ID=$(gh api repos/{owner}/{repo}/issues/"$CHILD_NUMBER" --jq '.id')
-gh api -X POST repos/{owner}/{repo}/issues/PARENT_NUMBER/sub_issues -F sub_issue_id="$CHILD_ID"
-
-# c. Verify the link before moving on:
+# b. Verify the link before moving on — --parent can still fail to attach silently:
 gh api --paginate repos/{owner}/{repo}/issues/PARENT_NUMBER/sub_issues --jq '.[].number' \
   | grep -qx "$CHILD_NUMBER" && echo "linked $CHILD_NUMBER" \
   || { echo "LINK MISSING for $CHILD_NUMBER"; exit 1; }
@@ -109,7 +147,7 @@ gh api --paginate repos/{owner}/{repo}/issues/PARENT_NUMBER/sub_issues --jq '.[]
 The `|| { …; exit 1; }` matters: `grep -qx … && echo … || echo …` on its own always exits 0,
 so a missing link would slip past a shell that checks the exit code.
 
-**If create, link, or verify fails, STOP and surface the error.** Do not continue to the next
+**If create or verify fails, STOP and surface the error.** Do not continue to the next
 child, and do not silently fall back to a markdown "Parent:" line in the body.
 
 ## Closing verification (set difference)
@@ -145,10 +183,32 @@ gh issue view <BLOCKER> --json state --jq '.state'    # every blocker "CLOSED" �
 A candidate whose `## Blocked by` says "None — can start immediately" is on the frontier
 without pass 2.
 
-## Native issue dependencies (optional visual layer)
+## Native blocking relationships
 
-GitHub also has native issue dependencies ("blocked by" relationships rendered in the issue
-UI), reachable via `gh api`. **No skill behavior depends on them** — the `## Blocked by` body
-section is the guaranteed channel. A later authoring pass may probe the REST endpoints in a
-sandbox and record working commands here; until then treat native dependencies as an
-additional visual layer only.
+GitHub has native issue dependencies — "blocked by"/"blocking" relationships, distinct from
+the parent/child sub-issue tree above. Confirmed live on this repo
+(`issues/{n}/dependencies/blocked_by` and `.../blocking` respond, not 404) and set with one
+flag each — this needs no manual REST dance, the CLI flags are first-class:
+
+- **At creation**: `gh issue create --blocked-by <n1,n2> --blocking <n3,n4>` — all three
+  mechanics (parent, type, blocking) can land in a single `gh issue create` call.
+- **After the fact** (the usual case — a blocker rarely has a number yet when the blocked
+  slice is created): `gh issue edit <n> --add-blocked-by <n> --add-blocking <n>` /
+  `--remove-blocked-by <n>` / `--remove-blocking <n>`
+
+If probing the raw REST endpoints directly instead of the CLI flags, note they take the
+blocker's **numeric `id`**, not its issue number (`{"issue_id": <id>}`) — prefer the CLI flags
+and skip that lookup entirely. Issues also carry an `issue_dependencies_summary` object
+(`blocked_by`/`blocking` counts) usable as a cheap verification read.
+
+**This is additive, not a replacement for the `## Blocked by` body section.** The native
+relationship is the machine-checkable graph GitHub's UI and API render; the markdown prose is
+the evidence and reasoning behind each edge that `rr-workshop:defending-findings` requires —
+neither channel can hold what the other carries. Every edge gets both.
+
+## Milestones — attach-only
+
+Milestones must **already exist** to attach one (`-m/--milestone` on `gh issue create` /
+`gh issue edit` resolves by name and fails if it doesn't). No skill in this plugin creates a
+milestone — an issue either attaches an existing one that already fits, or carries none.
+A repo with zero milestones is a normal state to find, not a gap to fill.
