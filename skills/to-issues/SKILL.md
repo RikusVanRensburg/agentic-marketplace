@@ -62,23 +62,26 @@ Ask:
 
 Iterate until the user explicitly approves. **`gh issue create` runs only after the approval message exists.**
 
-### 4. Publish — one slice at a time, create → link → verify
+### 4. Publish — one slice at a time, create → verify
 
 Publish in dependency order (blockers first) so every `## Blocked by` references a real issue number. Render each body per [references/slice-template.md](references/slice-template.md).
 
-**Do all three steps for ONE slice, fully, before starting the next: create the issue, link it as a sub-issue of the parent, verify the link.** Never batch-create and loop back to link — under context pressure the link loop is exactly what gets dropped, which is the failure this ordering prevents.
+**Do both steps for ONE slice, fully, before starting the next: create the issue (attaching it as a sub-issue of the parent in the same call), verify the link.** Never batch-create and loop back to verify — under context pressure the verify loop is exactly what gets dropped, which is the failure this ordering prevents.
 
-Run the exact command blocks from the "Create → link → verify" section of [../../docs/github-operations.md](../../docs/github-operations.md); they encode three recurring footguns — the sub-issue attach needs the child's **integer `id`**, not its number; the verify list needs `--paginate` (a single un-paginated page falsely reports children past 30 as missing); and the verify check needs its `|| { …; exit 1; }` tail (a bare `&&`/`||` chain always exits 0, so a missing link slips past). Accumulate each created number in the `CREATED` file as the block does — step 5 consumes it.
+Run the exact command blocks from the "Create → verify" section of [../../docs/github-operations.md](../../docs/github-operations.md); they encode two recurring footguns — the verify list needs `--paginate` (a single un-paginated page falsely reports children past 30 as missing), and the verify check needs its `|| { …; exit 1; }` tail (a bare `&&`/`||` chain always exits 0, so a missing link slips past). `--parent` attaches the sub-issue relationship in the same call as creation, but can still fail to attach silently — the verify step is what catches that. Accumulate each created number in the `CREATED` file as the block does — step 5 consumes it.
 
-**Labels on creation** — a separate `--label` flag each:
+**Flags on creation** — labels each as a separate `--label` flag, plus the native fields this slice carries:
 
 ```
---label "state: ready-for-agent" --label "type: <t>" --label "scope: <s>"
+--label "state: ready-for-agent" --label "type: <t>" --label "scope: <s>" \
+--parent PARENT_NUMBER --type <native-mapped-type> --blocked-by <n1,n2,...>
 ```
 
 `ready-for-agent`, not `needs-triage`: triage already happened — the human approved the spec (Gate 1) and this breakdown (step 3) — and `rr-workshop:orchestration`'s pre-flight refuses slices that aren't ready, so `needs-triage` would deadlock the pipeline. When the repo lacks the `state:`/`type:`/`scope:` taxonomy, create without the missing labels and tell the user — taxonomy labels are pre-seeded team vocabulary, never created here.
 
-**If create, link, or verify fails, STOP and surface the error to the user.** Do not continue to the next slice, and do not fall back to a markdown "Parent:" line in the body.
+`--type` is the native Issue Type, coarse-mapped from the label's `<t>` per [github-operations.md](../../docs/github-operations.md)'s "Native issue type" table: `feat→Feature`, `fix→Bug`, `refactor`/`chore`/`docs→Task`. It is additive to the `type:` label, never a replacement — the label keeps its full granularity, native type is deliberately coarser. `--blocked-by` takes the issue numbers of every blocker named in this slice's `## Blocked by` section — because slices publish in dependency order, every blocker already has a real number by the time this flag is set. **No `--assignee`** — slices must stay unassigned at creation so `rr-workshop:orchestration`'s frontier query (which filters on unassigned, open, unblocked issues) can find them; assignment only happens later, at claim time.
+
+**If create or verify fails, STOP and surface the error to the user.** Do not continue to the next slice, and do not fall back to a markdown "Parent:" line in the body.
 
 ### 5. Closing verification — the set difference
 
@@ -93,7 +96,7 @@ Hand off: the breakdown is what `rr-workshop:orchestration` implements — its p
 - A slice named after a layer ("persistence", "API", "UI") — horizontal; recut it as an end-to-end path.
 - One slice that adds a new form AND migrates every caller — a wide refactor missing its expand phase; sequence expand → migrate batches → contract.
 - `gh issue create` forming before the user's approval message exists.
-- Issues created in a batch with linking left "for after" — create, link, and verify each slice before the next.
+- Issues created in a batch with verification left "for after" — create and verify each slice before the next.
 - An edge you can't evidence, or a dependency you know exists with no edge for it.
 - `state: needs-triage` on a slice — that deadlocks the pipeline; slices leave here ready-for-agent.
 - About to edit, label, or close the parent.
