@@ -5,9 +5,10 @@ description: Investigate a GitHub issue for duplicates already in the tracker, a
 
 # Issue Triage
 
-Given one issue, find out whether the tracker already holds a genuine duplicate of it. Invoked
-manually against a specific issue — this skill does not listen for GitHub events; it is a
-Claude Code skill, not a webhook handler.
+Given one issue, find out whether the tracker already holds a genuine duplicate of it, and if
+so consolidate rather than leave both sitting open. Invoked manually against a specific issue
+— this skill does not listen for GitHub events; it is a Claude Code skill, not a webhook
+handler.
 
 **Standing rule:** whether a candidate is a genuine duplicate is a finding —
 `rr-workshop:defending-findings` applies. Superficial wording overlap is not evidence of a
@@ -45,29 +46,60 @@ stands if it survives that attack, cited with the specific evidence that forces 
 
 Reach one of three verdicts:
 
-- **Confident duplicate** — the case survives attack, cited with its evidence. This verdict is
-  a defended finding, ready for a consolidation step to act on.
+- **Confident duplicate** — the case survives attack, cited with its evidence. Proceed to
+  step 4 — resolve the survivor with the user, then consolidate.
 - **Confident non-duplicate** — no candidate's case survives attack. Report which candidates
-  were considered and the specific evidence that killed each. No further action.
-- **Ambiguous** — evidence exists on both sides and neither reading clearly wins. Report the
-  target and the closest candidate side by side, with the case for and against each — for a
-  human (or a later step) to review. No automatic action either way.
+  were considered and the specific evidence that killed each. **Stop here — no further action.**
+- **Ambiguous** — evidence exists on both sides and neither reading clearly wins. Surface the
+  target and the closest candidate side by side to the user for full review, explicitly
+  presenting the case for and against rather than picking one. **Stop here — no automatic
+  action either way.**
 
-**This skill does not modify, comment on, label, or close any issue** — it only searches and
-judges. Reporting the verdict, with its evidence, is the complete deliverable.
+### 4. Resolve the survivor with the user — only for a confident duplicate
+
+Ask the user, presenting both issues' titles and a one-line gist of each:
+
+- Keep the target issue (the one this skill was invoked on)
+- Keep the candidate issue (the existing one found)
+- Reject — these are not actually duplicates; leave both open, untouched
+
+Wait for an explicit choice. **Nothing changes until the user answers.**
+
+- **Reject** → leave both issues exactly as they are. Report that the duplicate claim was
+  rejected and stop.
+- **A survivor chosen** → the other issue is the loser. Continue to step 5.
+
+### 5. Consolidate
+
+1. **Preserve content**: read the loser's body and comments; append anything not already
+   covered by the survivor as a comment on the survivor (`gh issue comment <survivor> --body "..."`).
+2. **Cross-link**: comment on each issue referencing the other by number and title.
+3. **Label the loser, if the repo supports it**: check `gh label list` for a `duplicate` label
+   (a common GitHub default, not guaranteed to exist). If present, `gh issue edit <loser>
+   --add-label duplicate`. **Never create this label if it's missing** — the same rule as
+   every other pre-seeded taxonomy label in this plugin family.
+4. **Close the loser**: `gh issue close <loser> --reason "not planned" --comment "Duplicate of
+   #<survivor> (<survivor title>) — consolidated per the choice above."`
+
+**If any step fails, STOP and surface the error.** Do not report success on a partial
+consolidation.
 
 ## Red flags — STOP
 
+- Merging or closing anything before the user's explicit survivor choice exists.
 - Treating superficial wording overlap as sufficient evidence of a duplicate.
-- A verdict without cited evidence for whichever way it goes.
-- Modifying, commenting on, labeling, or closing any issue — this skill only investigates.
+- Creating a `duplicate` label that doesn't already exist in the target repo.
+- Picking a survivor by an automatic rule (filing order, more detail, anything) instead of
+  asking the user.
+- An ambiguous verdict resolving itself into an automatic action instead of full human review.
 - Listening for or reacting to a webhook/event — this skill is invoked, never triggered.
 
 ## Done when
 
-- [ ] The target issue's title and body were read, and candidates were searched from its
-      salient terms — not just its title.
-- [ ] A confident duplicate verdict cites the specific evidence that survived attack.
-- [ ] A confident non-duplicate verdict names its candidates and the evidence that killed each.
-- [ ] An ambiguous verdict presents both sides rather than picking one.
-- [ ] No issue anywhere was modified, commented on, labeled, or closed.
+- [ ] A confident duplicate always went through the user's explicit three-way choice before
+      anything changed.
+- [ ] A confident non-duplicate verdict named its candidates and the evidence that killed each.
+- [ ] An ambiguous verdict surfaced both issues for full review instead of acting automatically.
+- [ ] A consolidated pair has: the loser's unique content preserved as a comment on the
+      survivor, both cross-linked, the `duplicate` label applied only if the repo already has
+      it, and the loser closed as not planned.
