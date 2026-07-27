@@ -50,14 +50,19 @@ Present the draft, apply the user's edits to the file, re-show. Loop until the u
 
    ```bash
    gh issue create --title "<title>" --body-file docs/specs/<slug>.md \
-     --label "type: <type>" --label "scope: <scope>"
+     --label "type: <type>" --label "scope: <scope>" \
+     --assignee @me --type PRD \
+     ${MAP_NUMBER:+--parent "$MAP_NUMBER"} \
+     ${FITTING_MILESTONE:+--milestone "$FITTING_MILESTONE"}
    ```
 
    A separate `--label` flag per label — never one comma-joined string. When the repo lacks the `type:`/`scope:` taxonomy, create without labels: taxonomy labels are pre-seeded team vocabulary, never created here (label mechanics in [../../docs/github-operations.md](../../docs/github-operations.md)). The spec is a **parent**, so it never carries `state: ready-for-agent` — slices earn that label in `rr-workshop:to-issues`.
 
+   `--assignee @me` — the spec is a singleton parent with no claiming model, so assigning its creator is safe (contrast with `to-issues` slices, which must stay unassigned — see [github-operations.md](../../docs/github-operations.md)'s "Assignee on creation"). `--type PRD` is the native Issue Type and is **unconditional** — a spec is structurally a PRD regardless of what its `type:` label says the underlying work is; the two are different dimensions, not duplicates. `--parent` is passed only when a wayfinder map exists (`$MAP_NUMBER` set) — replaces the old create-then-manually-attach approach. `--milestone` is passed only when an existing open milestone already fits (`$FITTING_MILESTONE` set from checking whether the map, or an obviously-matching open milestone, already covers this spec) — never create one.
+
    **If the command exits non-zero, STOP and surface the error** — do not claim it published. On success, **echo the issue URL** to the user.
 
-2. **Link into the tree** — when a map exists, attach the spec as a native sub-issue of the map and **verify the link** (integer-id attach + `--paginate` verify, per [github-operations.md](../../docs/github-operations.md)).
+2. **Verify the link** — when a map exists, confirm the spec attached as a native sub-issue of the map (`--paginate` verify per [github-operations.md](../../docs/github-operations.md)'s "Create → verify"); `--parent` at creation can still fail to attach silently.
 
 3. **Index on the map** — append the destination-reached entry to the map's Decisions so far: `[<spec title>](<url>) — destination reached: spec published`. The spec subtree carries the effort from here.
 
