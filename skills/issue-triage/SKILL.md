@@ -1,6 +1,6 @@
 ---
 name: issue-triage
-description: Investigate a GitHub issue for duplicates already in the tracker, and consolidate if a genuine one is found. Manually invoked, pointed at a specific issue — not triggered by webhooks or events. Use when asked to triage, dedup, or check an issue for duplicates, e.g. "triage issue #142", "is this a duplicate?", "check #142 against the tracker".
+description: Use when asked to triage or dedup a GitHub issue, e.g. "triage issue #142", "is this a duplicate?", "check #142 against the tracker". Manually invoked against one specific issue; never triggered by webhooks or events.
 ---
 
 # Issue Triage
@@ -13,6 +13,40 @@ handler.
 **Standing rule:** whether a candidate is a genuine duplicate is a finding —
 `rr-workshop:defending-findings` applies. Superficial wording overlap is not evidence of a
 duplicate; the same underlying request or bug is.
+
+## Branches
+
+```dot
+digraph triage {
+  verdict [label="Step 3 verdict", shape=diamond];
+  nondup [label="Report candidates + evidence\nSTOP", shape=box];
+  ambig [label="Surface both issues\nfor full review — STOP", shape=box];
+  gate [label="Survivor gate:\nkeep target / keep candidate / reject", shape=diamond];
+  reject [label="Leave both untouched\nSTOP", shape=box];
+  consolidate [label="Consolidate\n(resolve-and-consolidate.md)", shape=box];
+
+  verdict -> nondup [label="confident non-duplicate"];
+  verdict -> ambig [label="ambiguous"];
+  verdict -> gate [label="confident duplicate"];
+  gate -> reject [label="reject"];
+  gate -> consolidate [label="keep target/candidate"];
+}
+```
+
+## Why the ask can't be skipped
+
+Consolidation is judgment applied under pressure — a long candidate list, an impatient user, a
+"these are basically the same" feeling — and that pressure produces predictable shortcuts.
+None of these change the rule: nothing merges or closes until the user has explicitly chosen
+at the **survivor gate** (step 4).
+
+| Excuse | Reality |
+|--------|---------|
+| "The wording match is obvious, no need to ask" | Wording overlap is exactly what the standing rule says isn't evidence — ask anyway. |
+| "The user already implied which one to keep" | An implication isn't the three-way choice (target / candidate / reject) — get the explicit answer. |
+| "Asking slows things down, I'm confident" | Confidence isn't the check; the survivor gate exists because a confident wrong merge closes an issue that shouldn't be closed. |
+| "This is basically a duplicate, close enough" | "Basically" is the ambiguous verdict — route it there, don't upgrade it to confident. |
+| "I'll merge now and let the user undo it if wrong" | Closing and cross-linking isn't reversible-by-default the way asking first is; nothing changes until the answer exists. |
 
 ## Steps
 
@@ -34,7 +68,10 @@ gh api -X GET search/issues -f q='repo:{owner}/{repo} is:issue is:open <salient 
 ```
 
 Exclude the target issue itself from its own candidate list. Read each candidate's full body,
-not just its title — a title alone is not enough evidence either way.
+not just its title — a title alone is not enough evidence either way. Done searching when the
+salient-terms query has run and — if it returned zero candidates — at least one alternate
+phrasing (a synonym, or the literal error text) has also been tried before concluding no
+candidates exist.
 
 ### 3. Judge each candidate as a defended finding
 
@@ -46,8 +83,8 @@ stands if it survives that attack, cited with the specific evidence that forces 
 
 Reach one of three verdicts:
 
-- **Confident duplicate** — the case survives attack, cited with its evidence. Proceed to
-  step 4 — resolve the survivor with the user, then consolidate.
+- **Confident duplicate** — the case survives attack, cited with its evidence. Continue to
+  step 4, the survivor gate.
 - **Confident non-duplicate** — no candidate's case survives attack. Report which candidates
   were considered and the specific evidence that killed each. **Stop here — no further action.**
 - **Ambiguous** — evidence exists on both sides and neither reading clearly wins. Surface the
@@ -55,51 +92,20 @@ Reach one of three verdicts:
   presenting the case for and against rather than picking one. **Stop here — no automatic
   action either way.**
 
-### 4. Resolve the survivor with the user — only for a confident duplicate
+### 4. The survivor gate — only for a confident duplicate
 
-Ask the user, presenting both issues' titles and a one-line gist of each:
-
-- Keep the target issue (the one this skill was invoked on)
-- Keep the candidate issue (the existing one found)
-- Reject — these are not actually duplicates; leave both open, untouched
-
-Wait for an explicit choice. **Nothing changes until the user answers.**
-
-- **Reject** → leave both issues exactly as they are. Report that the duplicate claim was
-  rejected and stop.
-- **A survivor chosen** → the other issue is the loser. Continue to step 5.
-
-### 5. Consolidate
-
-1. **Preserve content**: read the loser's body and comments; append anything not already
-   covered by the survivor as a comment on the survivor (`gh issue comment <survivor> --body "..."`).
-2. **Cross-link**: comment on each issue referencing the other by number and title.
-3. **Label the loser, if the repo supports it**: check `gh label list` for a `duplicate` label
-   (a common GitHub default, not guaranteed to exist). If present, `gh issue edit <loser>
-   --add-label duplicate`. **Never create this label if it's missing** — the same rule as
-   every other pre-seeded taxonomy label in this plugin family.
-4. **Close the loser**: `gh issue close <loser> --reason "not planned" --comment "Duplicate of
-   #<survivor> (<survivor title>) — consolidated per the choice above."`
-
-**If any step fails, STOP and surface the error.** Do not report success on a partial
-consolidation.
+See [resolve-and-consolidate.md](resolve-and-consolidate.md) for resolving the survivor with
+the user and consolidating.
 
 ## Red flags — STOP
 
-- Merging or closing anything before the user's explicit survivor choice exists.
 - Treating superficial wording overlap as sufficient evidence of a duplicate.
-- Creating a `duplicate` label that doesn't already exist in the target repo.
-- Picking a survivor by an automatic rule (filing order, more detail, anything) instead of
-  asking the user.
+- Picking a survivor by an automatic rule (filing order, more detail, anything) instead of the
+  survivor gate.
 - An ambiguous verdict resolving itself into an automatic action instead of full human review.
-- Listening for or reacting to a webhook/event — this skill is invoked, never triggered.
 
 ## Done when
 
-- [ ] A confident duplicate always went through the user's explicit three-way choice before
-      anything changed.
 - [ ] A confident non-duplicate verdict named its candidates and the evidence that killed each.
 - [ ] An ambiguous verdict surfaced both issues for full review instead of acting automatically.
-- [ ] A consolidated pair has: the loser's unique content preserved as a comment on the
-      survivor, both cross-linked, the `duplicate` label applied only if the repo already has
-      it, and the loser closed as not planned.
+- [ ] A confident duplicate went through the survivor gate in `resolve-and-consolidate.md` in full.
