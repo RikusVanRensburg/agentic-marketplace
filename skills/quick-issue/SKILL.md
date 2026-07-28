@@ -1,70 +1,16 @@
 ---
 name: quick-issue
-description: Use when the ask is already clear and you just want it filed now, or an existing issue is thin and needs fleshing out. NOT for a fuzzy problem needing exploration (use core:github_create-issue), NOT for multi-stage work needing a breakdown (use rr-workshop:to-spec), NOT for duplicate-checking (use rr:issue-triage, only when asked). Triggers include "log an issue for X", "quick issue", "just file this", "populate issue #N", "flesh out #N".
+description: Use when the ask is already clear and just needs filing as a GitHub issue — "log an issue for X", "quick issue", "just file this" — or when an existing issue is thin and needs fleshing out in place — "populate #N", "flesh out #N". For a problem that still needs exploring use core:github_create-issue; for duplicate-checking, rr:issue-triage.
 ---
 
 # Quick Issue
 
-No wayfinding, no grilling, no spec draft. Two entry points, both landing on the same
-well-structured shape:
+The **fast path**: the thinking is already done, so this is transcription. Two modes landing on
+the same shape — given an issue number, run Mode B; otherwise Mode A.
 
-- **Mode A — create.** The idea is already decided; turn it into one new issue.
-- **Mode B — populate.** An issue already exists but is sparse; investigate it and fill in the
-  same structure in place, without creating anything new.
+## The shape
 
-This skill is deliberately the opposite of `core:github_create-issue`, which exists to
-interview a *fuzzy* problem into clarity — if the problem isn't clear yet, use that skill
-instead of this one. It is also **not** a duplicate check: `rr:issue-triage` handles that,
-invoked on its own, only when asked — neither mode here ever runs it automatically.
-
-This skill is self-contained: it does not depend on any file belonging to another plugin.
-The native-field mechanics below are its own copy, kept intentionally small.
-
-## Mode A: create a new issue
-
-### 1. Get the essentials
-
-Ask only for what's genuinely missing from the conversation — a title, the **problem** (what's
-wrong or wanted, from the user's perspective), the **context** (why it matters, anything
-relevant already known), and **acceptance criteria** (concrete, checkable outcomes). If the
-user already stated all of this, don't re-ask it as a formal interview — that's
-`core:github_create-issue`'s job, not this one's.
-
-### 2. Resolve the repo's own label taxonomy
-
-```bash
-gh label list --limit 200 --json name
-```
-
-Look for a `type:`-prefixed and a `scope:`-prefixed family. Pick the `type:` value whose
-meaning fits (a new capability, a bug fix, or general upkeep — the label text varies by repo;
-match by meaning, not by an assumed literal string). Pick a `scope:` value only if one clearly
-applies; otherwise omit it. Only apply labels that already exist in the repo's taxonomy — if
-the repo has none, create the issue without those labels and tell the user; taxonomy labels
-are pre-seeded team vocabulary.
-
-### 3. Map to native issue type
-
-Native Issue Type is a separate, coarser field from the `type:` label (check
-`gh api orgs/{owner}/issue-types` if unsure whether the org has one configured — if the
-endpoint 404s or returns nothing, skip `--type` entirely). Map by meaning:
-
-- A new capability → `Feature`
-- A bug fix → `Bug`
-- Anything else (restructuring, housekeeping, docs) → `Task`
-
-This is additive to the `type:` label chosen in step 2 — set both, never one instead of the
-other.
-
-### 4. Create the issue
-
-```bash
-gh issue create --title "<title>" --body-file <local-draft>.md \
-  --label "<type-label>" --label "<scope-label>" \
-  --assignee @me --type "<native-type>"
-```
-
-Render the body as exactly three sections — no more:
+Every issue this skill touches ends with exactly these three sections — no more:
 
 ```markdown
 ## Problem
@@ -77,70 +23,83 @@ Render the body as exactly three sections — no more:
 
 ## Acceptance criteria
 
-- [ ] <criterion>
-- [ ] <criterion>
+- [ ] <concrete, checkable outcome>
 ```
 
-`--assignee @me` is safe here — this is a standalone issue with no parent/child tree and no
-frontier depending on it staying unassigned, unlike a slice in the heavier pipeline. Omit
-`--label`/`--type` flags the repo doesn't support, per steps 2-3.
+Fill them from what the user or the issue already says, plus whatever a file or component it
+names tells you when you read it. Ready to render when all three can be written **without
+guessing**; if something is still missing, ask for it in one round, then write.
 
-**If the command exits non-zero, STOP and report the exact error.** Only report success — with
-the issue URL — when the command actually exited zero.
+## The native fields
 
-## Mode B: populate an existing sparse issue
+Three fields ride alongside the body in both modes.
 
-Given an issue number or URL instead of a fresh description. This mode **edits in place** —
-it never creates a new issue, and it never checks the issue against the rest of the tracker
-for duplicates (that's `rr:issue-triage`, invoked separately, only when asked).
-
-### 1. Fetch the target issue
+**Labels — drawn from the repo's own taxonomy:**
 
 ```bash
-gh issue view <n> --json number,title,body,labels,assignees,type,state
+gh label list --limit 200 --json name
 ```
 
-If none was given, ask for one before continuing.
+Pick from what that command returned: the `type:`-family value whose *meaning* fits (new
+capability, bug fix, or upkeep — the literal strings vary by repo), plus a `scope:`-family
+value if one clearly applies. The taxonomy is pre-seeded team vocabulary, so if a family is
+absent from the list, file without it and tell the user.
 
-### 2. Investigate lightly
+**Native issue type — a separate, coarser field from the `type:` label; set both.** Map by
+meaning: new capability → `Feature`, bug fix → `Bug`, everything else (restructuring,
+housekeeping, docs) → `Task`. Check `gh api orgs/{owner}/issue-types` if unsure the org has
+issue types configured; if it 404s or returns nothing, omit `--type`.
 
-Read the existing (sparse) title and body. Look only at files or components the ask
-explicitly names — this is **not** the multi-phase interview `core:github_create-issue` does.
-Stop once Problem, Context, and at least one Acceptance Criterion can be written without
-guessing; if you still can't, ask the user one direct question rather than open a second round.
+**Assignee — `@me`.**
 
-### 3. Render the populated body
-
-Same three-section shape as Mode A (`## Problem`, `## Context`, `## Acceptance criteria`).
-**Preserve what's already useful** in the existing sparse text — incorporate it into the
-right section rather than discarding it; expand and clarify, don't erase.
-
-### 4. Edit in place — fill gaps only, never overwrite
+## Mode A — file a new issue
 
 ```bash
-gh issue edit <n> --body-file <local-draft>.md
+gh issue create --title "<title>" --body-file <local-draft>.md \
+  --label "<type-label>" --label "<scope-label>" \
+  --assignee @me --type "<native-type>"
 ```
 
-Then, **only for fields that are currently empty** (check the JSON from step 1 first):
+Drop any flag the repo or org doesn't support. Report success by echoing the issue URL the
+command printed; on a non-zero exit, stop and report the error verbatim.
 
-- **Assignee**: `gh issue edit <n> --add-assignee @me` only if `assignees` is empty. An
-  existing assignee is left untouched — this issue may already be someone else's, or already
-  deliberately assigned.
-- **Labels**: add a `type:`/`scope:` label (same meaning-matching and taxonomy rules as Mode A
-  step 2) only if the issue doesn't already carry one from that family. An existing label from
-  either family is left as-is.
-- **Native type**: `gh issue edit <n> --type "<native-type>"` (same mapping as Mode A step 3)
-  only if `.type` is currently `null`.
+## Mode B — flesh out an existing issue
 
-**If any edit fails, STOP and surface the error.** Report exactly what was filled in and what
-was already present and left untouched.
+Everything already on the issue **survives**: the body is rewritten into the shape with the
+existing text folded into the section it belongs in, and each native field is filled only where
+it is currently blank.
+
+1. Fetch the target, asking for the number if none was given:
+
+   ```bash
+   gh issue view <n> --json number,title,body,labels,assignees,type,state
+   ```
+
+2. Read the sparse title and body, plus any file or component its text names, until the shape
+   can be written without guessing.
+
+3. Rewrite the body in place:
+
+   ```bash
+   gh issue edit <n> --body-file <local-draft>.md
+   ```
+
+4. Fill blanks, judged against the JSON from step 1:
+
+   - `assignees` empty → `gh issue edit <n> --add-assignee @me`
+   - no label from a family → add that family's label
+   - `.type` is `null` → `gh issue edit <n> --type "<native-type>"`
+
+On a non-zero exit from any edit, stop and report the error verbatim. Otherwise report, field
+by field, what you filled and what was already there.
 
 ## Done when
 
-- [ ] **Mode A**: the issue exists with exactly the three-section body; assignee and native
-      type (when the org has one configured) are set; the `type:`/`scope:` labels used already
-      existed, or their absence was surfaced to the user; the issue URL was echoed.
-- [ ] **Mode B**: the target issue's body now has the three-section shape, incorporating its
-      prior content; assignee/labels/native type were filled in only where empty, with existing
-      values left untouched; what was filled in vs. left alone was reported to the user.
-- [ ] Neither mode ran a duplicate check.
+- [ ] The body is exactly the three sections of the shape, every acceptance criterion a
+      concrete checkable outcome.
+- [ ] Labels, native type and assignee are each either set on the issue, or their absence
+      explained to the user (family missing from the taxonomy, org has no issue types).
+- [ ] **Mode A** — the URL `gh issue create` printed was echoed to the user.
+- [ ] **Mode B** — the prior body text survives inside the new shape, and each of `assignees`,
+      the `type:`/`scope:` labels and `.type` was reported as either filled now or already
+      present.
