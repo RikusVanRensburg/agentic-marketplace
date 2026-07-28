@@ -1,6 +1,6 @@
 # Good and Bad Tests
 
-Language-agnostic principles. If `docs/agents/testing.md` exists, read it too for this repo's concrete idioms.
+Language-agnostic principles; the repo's own idioms live in `docs/agents/testing.md`.
 
 ## Good Tests
 
@@ -25,7 +25,7 @@ Characteristics:
 - One logical assertion per test
 - Test name reads like a spec: "user can checkout with valid cart"
 
-Arrange through the same API a real caller would use. Act by invoking the public interface. Assert on the observable result through the interface — never reach past it into private internals.
+Arrange through the same API a real caller would use. Act by invoking the public interface. Assert on the observable result at the seam, using only what the seam exposes.
 
 ## Bad Tests
 

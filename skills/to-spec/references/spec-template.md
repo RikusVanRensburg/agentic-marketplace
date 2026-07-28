@@ -12,18 +12,18 @@ to hand (an HTML comment — invisible in the rendered issue, harmless if publis
 ```
 
 `type:` defaults to `feat`; offer to override (e.g. `refactor` for an architectural spec).
-Omit `scope:` when the repo has no `scope:` labels.
+Include `scope:` only where the repo has a `scope:` label taxonomy.
 
 ## Ground rules
 
 - Write modules, interfaces, and seams in the
   [architecture-language](architecture-language.md) vocabulary — the same terms the seam
   sketch used.
-- **No file paths or code snippets** — they go stale faster than the spec; name modules in
-  prose. **One exception — the prototype snippet:** if a prototype produced a snippet that
-  encodes a decision more precisely than prose can (state machine, reducer, schema, type
-  shape), inline it within the relevant decision and note briefly that it came from a
-  prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
+- **Name modules in prose** — file paths and code snippets go stale faster than the spec.
+  **One exception — the prototype snippet:** if a prototype produced a snippet that encodes a
+  decision more precisely than prose can (state machine, reducer, schema, type shape), inline
+  it within the relevant decision and note briefly that it came from a prototype. Trim to the
+  decision-rich parts — not a working demo, just the important bits.
 
 <spec-template>
 
@@ -48,8 +48,8 @@ A LONG, numbered list — extensive enough to cover every aspect of the feature.
 ## Implementation Decisions
 
 The decisions made on the way here: modules built or modified and the seams they sit at,
-interfaces changing, architectural decisions, schema changes, API contracts, technical
-clarifications, specific interactions.
+interfaces changing, architectural decisions, schema changes, technical clarifications,
+specific interactions.
 
 Every entry is a **defended decision** (`rr-workshop:defending-findings`), carrying three
 parts:
@@ -70,9 +70,9 @@ parts:
 
 ## Testing Decisions
 
-- What makes a good test here: test external behaviour at the seam — the interface is the
-  test surface — not implementation details.
-- Which modules will be tested (the ones the user named at the seam check).
+- **Which modules will be tested** — exactly the modules the user named at the seam check,
+  listed by name. This list is a hard input: it comes from the user, not from inference.
+- **The seam each is tested at**, and why that seam.
 - Prior art — similar tests in the codebase.
 
 ## Out of Scope

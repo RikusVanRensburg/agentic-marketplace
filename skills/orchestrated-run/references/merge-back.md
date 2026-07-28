@@ -1,30 +1,30 @@
 # Merge-back — SOURCE into BASE
 
-Stage 5 of the pipeline. Interactive, in this session. Everything integrated sits on **SOURCE**
-(the dedicated integration branch); **BASE** — the human's branch — was never touched during the
-run, so merging is a normal single-worktree operation here, and every decision in it belongs to
-the user.
+Row 6 of the pipeline. Interactive, in this session: BASE was never touched during the run, so
+this is a normal single-worktree operation — and every decision in it belongs to the user.
 
-**The integrated set** — which slices landed — comes from the workflow's final report
-(`integrated` / `integrationOrder`) in the session that ran it, or, on a resumed session, from the
-"integrated into `<SOURCE>` at `<sha>`" comment on each slice. In doubt, confirm a sha landed:
-`git merge-base --is-ancestor <sha> <SOURCE>`.
+**The integrated set** — which slices landed — is the set of slices under the spec that read
+CLOSED. Integration closes a slice only on a merge it built and verified on SOURCE, so CLOSED
+*is* the merge record; nothing else about an integration is written to the tracker. In the
+session that launched the workflow, the final report says the same thing (`integrated` /
+`integrationOrder`) and adds the merge commits. What the merge will actually bring across:
+`git log --oneline <BASE>..<SOURCE>`.
 
 ## 1. Surface the verdict — before any merge
 
 Put the final-review outcome in front of the user first:
 
 - **Clean verdict** → proceed to the merge (step 3).
-- **Outstanding blockers** (survived remediation): name them. The integration branch still
-  contains every integrated slice's work regardless of the verdict — per-slice QA already gated
-  each one individually — so the user decides: **fix first** (step 2), **merge as-is and fix
-  forward** (step 3), or **hold**.
+- **Outstanding blockers** (survived remediation): name them. SOURCE still contains every
+  integrated slice's work regardless of the verdict — per-slice QA already gated each one
+  individually — so the user decides: **fix first** (step 2), **merge as-is and fix forward**
+  (step 3), or **hold**.
 - **Verdict unavailable** (resumed session — the report died with its session): say so. Either
   relaunch `rr-workshop:orchestration` against the SAME SOURCE — its reconcile skips every landed
   slice, so the relaunch ends in a fresh final review — or merge without a verdict on the user's
   explicit say-so.
 - **Hold**: record it — a comment on the spec noting the hold, the outstanding blockers, and that
-  SOURCE stands intact. The tree stays open; stage resolution lands back here next session. Stop.
+  SOURCE stands intact. The tree stays open; resolution lands back on row 6 next session. Stop.
 
 ## 2. Fix blockers first (when the user chooses to)
 
@@ -35,9 +35,11 @@ already-merged issue numbers), `finalReviewDone` when a prior run delivered the 
 targeting the **same SOURCE**: never recreate it, never reset it. When the relaunch returns,
 start over at step 1 with the new report.
 
-## 3. Merge
+## 3. Merge — on the go-ahead
 
-From BASE (already checked out — the run never moved it):
+Ask for the go-ahead on *this* merge, of this SOURCE, into BASE as it stands now (the rule and the
+rationalizations that erode it are in the skill body's "Merging into BASE"). Then, from BASE
+(already checked out — the run never moved it):
 
 1. `git merge --ff-only <SOURCE>` first — the common case, since BASE usually hasn't moved during
    the run.
@@ -49,19 +51,18 @@ From BASE (already checked out — the run never moved it):
 One comment on the **spec issue** carrying the final-review findings — blockers, nits, verdict —
 and the merge commit. The tree is the ledger: the findings live here, not in a file.
 
-## 5. Close the tree — children before parents
+## 5. Close the tree — verify the slices, close the parents
 
-Closing a child never auto-closes its parent, so every close is explicit, each
+Integration already closed every slice it merged, so the slices are a **check**, not an action:
+confirm every slice under the spec reads CLOSED (`gh issue list`, or `gh issue view <n> --json
+state` per slice). A slice still open was never integrated — it is a fix-forward remainder, and
+the parents stay open with it, so a later session routes back here.
+
+Closing a child never auto-closes its parent, so each parent closes explicitly,
 `gh issue close <n> --reason completed`:
 
-1. **Every integrated slice** (skip any a `closeOnIntegrate: true` run already closed), with a
-   closing comment linking the merge.
-2. **The spec** — only when no slice under it remains open. If unintegrated slices remain (the
-   user merged as-is to fix forward), they stay open, and the spec and map stay open with them —
-   stage resolution routes a later session back to them.
-3. **The map**, when the run has one.
-
-Require before moving on: every issue in the integrated set reads CLOSED.
+1. **The spec** — only when no slice under it remains open.
+2. **The map**, when the run has one.
 
 ## 6. The integration branch — ask, don't assume
 

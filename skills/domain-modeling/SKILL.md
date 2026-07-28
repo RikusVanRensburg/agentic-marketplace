@@ -1,74 +1,79 @@
 ---
 name: domain-modeling
-description: Build and sharpen a project's domain model. Use when the user wants to pin down domain terminology or a ubiquitous language, record an architectural decision, or when another skill (wayfinder, to-spec) needs to maintain the domain model inline.
+description: Use when the ubiquitous language needs building or sharpening — a term to pin down, a fuzzy word to make precise, a CONTEXT.md or bounded-context glossary to write — when a decision should be recorded as an ADR, or when another skill (wayfinder, to-spec) needs the ubiquitous language maintained inline.
 ---
 
 # Domain Modeling
 
-Actively build and sharpen the project's domain model as you design. This is the *active* discipline — challenging terms, inventing edge-case scenarios, and writing the glossary and decisions down the moment they crystallise. (Merely *reading* `CONTEXT.md` for vocabulary is not this skill — that's a one-line habit any skill can do. This skill is for when you're changing the model, not just consuming it.)
+The active discipline of moving the model: challenging terms, inventing edge-case scenarios, and writing the **ubiquitous language** and its decisions down the moment they crystallise. Fires when the model moves — a term coined, sharpened, or contested, or a decision worth recording. Each **bounded context** owns one ubiquitous language, held in its `CONTEXT.md`.
 
-## File structure
+The moves below are a menu, not a sequence. Invoked on a single term (as `to-spec` does), run the moves that bear on that term; invoked for a whole session (as `wayfinder` does), keep them live throughout.
 
-Most repos have a single context:
+## Moves
 
-```
-/
-├── CONTEXT.md
-├── docs/
-│   └── adr/
-│       ├── 0001-event-sourced-orders.md
-│       └── 0002-postgres-for-write-model.md
-└── src/
-```
+### Challenge against the ubiquitous language
 
-If a `CONTEXT-MAP.md` exists at the root, the repo has multiple contexts. The map points to where each one lives:
-
-```
-/
-├── CONTEXT-MAP.md
-├── docs/
-│   └── adr/                          ← system-wide decisions
-├── src/
-│   ├── ordering/
-│   │   ├── CONTEXT.md
-│   │   └── docs/adr/                 ← context-specific decisions
-│   └── billing/
-│       ├── CONTEXT.md
-│       └── docs/adr/
-```
-
-Create files lazily — only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved. If no `docs/adr/` exists, create it when the first ADR is needed.
-
-## During the session
-
-### Challenge against the glossary
-
-When the user uses a term that conflicts with the existing language in `CONTEXT.md`, call it out immediately. "Your glossary defines 'cancellation' as X, but you seem to mean Y — which is it?"
+When the user uses a term in a way that conflicts with the bounded context's `CONTEXT.md`, call it out immediately. "Your CONTEXT.md defines 'cancellation' as X, but you seem to mean Y — which is it?"
 
 ### Sharpen fuzzy language
 
-When the user uses vague or overloaded terms, propose a precise canonical term. "You're saying 'account' — do you mean the Customer or the User? Those are different things."
+When a term is vague or overloaded, propose a precise canonical one. "You're saying 'account' — do you mean the Customer or the User? Those are different things."
 
-### Discuss concrete scenarios
+### Stress-test with concrete scenarios
 
-When domain relationships are being discussed, stress-test them with specific scenarios. Invent scenarios that probe edge cases and force the user to be precise about the boundaries between concepts.
+When domain relationships come up, invent specific scenarios that probe edge cases and force the user to be precise about where one concept ends and the next begins.
 
 ### Cross-reference with code
 
-When the user states how something works, check whether the code agrees. If you find a contradiction, surface it: "Your code cancels entire Orders, but you just said partial cancellation is possible — which is right?"
+When the user states how something works, check whether the code agrees. Surface every contradiction: "Your code cancels entire Orders, but you just said partial cancellation is possible — which is right?"
 
-### Update CONTEXT.md inline
+## Capture
 
-When a term is resolved, update `CONTEXT.md` right there. Don't batch these up — capture them as they happen. Use the format in [CONTEXT-FORMAT.md](./CONTEXT-FORMAT.md).
+### Write each term into CONTEXT.md as it resolves
 
-`CONTEXT.md` should be totally devoid of implementation details. Do not treat `CONTEXT.md` as a spec, a scratch pad, or a repository for implementation decisions. It is a glossary and nothing else.
+The moment a term resolves, write it into the bounded context's `CONTEXT.md`, during the conversation rather than batched at the end.
+
+`CONTEXT.md` carries vocabulary alone: the context's name, a sentence on why it exists, and the terms. Decisions belong in an ADR; behaviour belongs in the code.
+
+Structure:
+
+```md
+# {Context Name}
+
+{One or two sentences: what this bounded context covers and why it exists.}
+
+## Ubiquitous Language
+
+**Order**:
+A customer's request for goods, accepted and tracked through to delivery.
+_Avoid_: Purchase, transaction
+
+**Invoice**:
+A request for payment sent to a customer after delivery.
+_Avoid_: Bill, payment request
+```
+
+Rules:
+
+- **Be opinionated.** When several words exist for one concept, pick the best and list the rest under `_Avoid_`.
+- **Keep definitions tight.** One or two sentences, saying what the term IS.
+- **Only terms this bounded context gives its own meaning.** General programming concepts — timeouts, error types, utility patterns — keep their ordinary meaning and stay out, however heavily the project uses them.
+- **Group terms under subheadings** once natural clusters emerge.
 
 ### Offer ADRs sparingly
 
-Only offer to create an ADR when all three are true:
+Offer an ADR only when all three hold:
 
 1. **Hard to reverse** — the cost of changing your mind later is meaningful
 2. **Surprising without context** — a future reader will wonder "why did they do it this way?"
 3. **The result of a real trade-off** — there were genuine alternatives and you picked one for specific reasons
 
-If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](./ADR-FORMAT.md).
+When a decision clears all three, read [ADR-FORMAT.md](./ADR-FORMAT.md) before drafting — it holds the kinds of decision that qualify and the template. Decisions short of the bar stay in the conversation.
+
+## Where these files live
+
+A single-context repo keeps `CONTEXT.md` at the root and ADRs in `docs/adr/`. A root `CONTEXT-MAP.md` — listing the contexts, where each lives, and how they relate — means the repo is multi-context: each context holds its own `CONTEXT.md` and its own `docs/adr/`, while root `docs/adr/` holds system-wide decisions. Infer which bounded context the current topic belongs to, and ask when that is unclear.
+
+Create each file the moment you first have something to write into it.
+
+**Done when:** every term this run coined or sharpened sits in the right `CONTEXT.md` with its `_Avoid_` list; every claim about how the domain works has been checked against the code; and every decision meeting all three ADR conditions has been offered as an ADR.

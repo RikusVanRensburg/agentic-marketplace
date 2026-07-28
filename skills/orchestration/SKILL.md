@@ -1,40 +1,38 @@
 ---
 name: orchestration
-description: Implement an existing GitHub-issue breakdown unattended — ready-for-agent sub-issues with blocking edges driven to completion via the shipped workflow script. Use when a breakdown already exists and the user wants it implemented AFK ("run the breakdown", "implement the issues"), or when rr-workshop:orchestrated-run reaches its implementation stage.
+description: Implement an existing GitHub-issue breakdown unattended — work the frontier of ready slices through to merged code. Use when the user wants an existing breakdown built AFK ("run the breakdown", "implement the issues"), when a prior run's blockers have been resolved and it should resume, or when rr-workshop:orchestrated-run reaches its implementation stage.
 ---
 
-The **breakdown** exists; now drive **every** slice to done, unattended, by launching the **dynamic workflow shipped with this skill** ([orchestration.js](orchestration.js)). Its machinery is what makes AFK-with-merge safe — each piece closes a gap that would otherwise rightly make an agent refuse to merge unattended:
+The **breakdown** exists; now drive **every** slice to merged, unattended.
 
-- **Independent QA** per slice — a fresh agent forms its own picture from the issue tree and never sees the dev's report.
-- **Verified merge** — integration builds and runs the full suite on SOURCE and resets on red; nothing closes for an unverified merge.
-- **Dependency-ordered** — every task branch forks from SOURCE (never stacked on a sibling), and merges land on it serially in dependency order.
-- **Escalation ladder + circuit breaker** — a QA rejection climbs the dev model one rung; a rejection at the top rung halts only that slice's dependency branch, with a structured **blocker**.
-- **Resume** — a relaunch is idempotent: the script reconciles against the tracker before spending any agent.
+Two stages. An interactive **pre-flight** in this session freezes the dependency graph — the **frontier** the run works, one wave of unblocked slices at a time. Then the launched workflow ([orchestration.js](orchestration.js)) carries that frontier to done with no human in the loop.
 
-It runs in **two stages**: an interactive **pre-flight** in this session, then a launched workflow that runs unattended.
-
-**Standing rule:** `rr-workshop:defending-findings` applies to **pre-flight** — every edge and branch decision is defended before launch. The unattended QA and Final Review stages are deliberately cheaper: they return a plain pass/fail with a defect list, with no per-issue adversarial self-attack ritual — that cost belongs to the one-time graph decisions, not to a check that reruns per issue, per rung.
+**Standing rule:** `rr-workshop:defending-findings` applies to **pre-flight** — every edge and every branch decision is defended before launch. The unattended stages deliberately skip the defense and return a plain verdict plus defects: that cost belongs to the one-time graph decisions, not to a check that reruns per slice, per rung.
 
 ## Prerequisites
 
-- **GitHub tracker.** Pre-flight reads the native sub-issue tree and the workflow comments/closes via `gh` — mechanics in [../../docs/github-operations.md](../../docs/github-operations.md).
-- **A breakdown EXISTS.** This skill implements a tree; it does not create one. If the parent has zero sub-issues, **stop** and point at `rr-workshop:to-issues`.
-- **Every slice is `state: ready-for-agent`** where the repo defines the `state:` taxonomy. Slices leave `rr-workshop:to-issues` ready, so a non-ready slice means the breakdown isn't finished — **stop** and surface it to the user. No taxonomy ⇒ skip this check.
-- **Dynamic workflows are enabled** (a research-preview feature; enable via `/config`). If not, **stop and say so** — a serial in-session fallback forfeits the fan-out and the safety machinery above.
+- **A breakdown EXISTS.** `gh api --paginate repos/{owner}/{repo}/issues/<PARENT>/sub_issues --jq '.[].number'` prints nothing ⇒ **stop** and point at `rr-workshop:to-issues`. This skill implements a tree; it creates no issues and edits no bodies, so a missing or wrong breakdown goes back there too.
+- **Every slice carries `state: ready-for-agent`.** First `gh label list --limit 200 --json name --jq '.[].name' | grep '^state:'` — empty output means the repo has no `state:` taxonomy, so nothing distinguishes an AFK slice from one needing a human: **stop** and get the user to confirm slice by slice. Otherwise read each slice's labels (`gh issue view <n> --json labels --jq '.labels[].name'`); any slice missing `ready-for-agent` ⇒ **stop** and surface it.
+
+  This check *is* the HITL filter. `rr-workshop:to-issues` labels a slice needing a human `state: ready-for-human`, never `ready-for-agent` — so a HITL slice fails this check and never enters the graph pre-flight builds.
+- **The `Workflow` tool is available.** Absent from your tool list ⇒ **stop and say so** (dynamic workflows are a research preview, enabled via `/config`). A serial in-session fallback forfeits the fan-out and every guarantee below.
+- **GitHub tracker.** Pre-flight reads the tree and the workflow closes slices via `gh`: the "Sub-issues (parent/child tree)" and "Native blocking relationships" sections of [../../docs/github-operations.md](../../docs/github-operations.md).
 
 ## Stage 1 — Pre-flight (interactive, in this session)
 
 The workflow takes **no** human input once running; every ambiguity is resolved now.
 
-1. **Read the whole tree.** The parent's body + **all** comments; enumerate every sub-issue (`--paginate`) and read each body + **all** comments + acceptance criteria.
-2. **Build the dependency graph.** Edges, in priority order: (1) explicit `## Blocked by` references, (2) the order slices are listed in the parent body, (3) ascending issue number as tiebreaker. Detect cycles; resolve any with the user.
-3. **Pre-resolve branches + source.** The workflow takes no mid-run input, so every branch decision must be made now. For each issue compute a deterministic branch name (using the pattern recorded in `docs/agents/branches.md` if it exists) and settle the single `SOURCE` branch DEV forks from and integration merges into. These travel as `args.graph[<n>].branch` and `args.source`; DEV agents take them as givens and never prompt.
-4. **Grill residual ambiguity to zero** via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requirements, doubtful edges, environment or credential needs — anything an unattended agent would otherwise guess.
-5. **Present and get explicit launch approval (GATE 2).** The graph, the resolved branches/source, and the fan-out order. The approval message is the human's go/no-go.
+1. **Read the whole tree.** The parent's body + **all** comments; enumerate every slice (`--paginate`) and read each body + **all** comments + acceptance criteria. Done when no slice remains unread.
+2. **Build the frontier graph.** Read the **native** dependency relationship first — `gh api repos/{owner}/{repo}/issues/<n>/dependencies/blocked_by --jq '.[].number'` — then cross-check it against the slice's `## Blocked by` prose, which carries the evidence that makes each edge real. Both channels agreeing is what promotes an edge into the graph. A disagreement between them, or a missing `## Blocked by` section, is a defect in the breakdown: resolve it with the user before launching. Edges come from these two channels only — never from the order slices are listed in, and never from issue numbers.
+
+   Get this right once: the script computes each wave's `ready()` in memory from exactly this graph and never re-reads dependency state from the tracker, so a wrong edge stays wrong for the whole run.
+3. **Pre-resolve branches + source.** For each slice compute a deterministic **slice branch** — the convention in `docs/agents/branches.md` when the repo has one, otherwise the script's own shape, `orch/<parent-slug>-task-<issue>-<title-slug>` — and settle the single `SOURCE` branch every slice branch forks from and integration merges into. These travel as `args.graph[<n>].branch` and `args.source`; DEV agents take them as givens and never prompt.
+4. **Grill residual ambiguity to zero** via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requirements, doubtful edges, environment or credential needs — anything an unattended agent would otherwise guess. Done when a full round surfaces no new question.
+5. **Present the frontier and get explicit launch approval (GATE 2).** Walk the graph wave by wave — which slices start immediately, what each later wave waits on — with the resolved slice branches and SOURCE. The user's approval message is the go/no-go.
 
 ## Stage 2 — Launch the shipped workflow
 
-One call; the script's header comment is the args contract's single source of truth:
+One call. The header comment of [orchestration.js](orchestration.js) is the args contract's single source of truth — read it for the optional args:
 
 ```
 Workflow({
@@ -42,37 +40,43 @@ Workflow({
   args: {
     parent: '<parent issue URL>',
     source: '<SOURCE>',
-    graph: { <issueNumber>: { deps: [<issue numbers>], title: '<title>', branch: '<pre-resolved branch>' }, ... },
-    // optional: ladder, and the resume channel: integrated / answers / finalReviewDone
+    graph: { <issueNumber>: { deps: [<issue numbers>], title: '<title>', branch: '<pre-resolved slice branch>' }, ... },
   },
 })
 ```
 
-**Never edit or re-author `orchestration.js` per run** — per-launch authoring lets the model vary the orchestration between runs, exactly the nondeterminism the workflow exists to eliminate (ADR 0002); per-run variation travels in `args`. The script validates the contract and fails fast on a malformed graph — cycles, duplicate branches, a branch equal to SOURCE — before spending a single agent.
+**Launch the script exactly as shipped**; every per-run difference travels in `args`. Per-launch authoring lets the model vary the orchestration between runs — precisely the nondeterminism this workflow exists to eliminate (ADR 0002).
 
-Why the ladder and gates are shaped this way: dev is the output-heavy stage, so it runs the cheap rungs (default `sonnet → sonnet → opus`) and the cheapest-capable tier is *discovered* per slice — each QA rejection climbs one rung. The gates stay premium because verdicts are output-light: QA is `opus` at every rung, the serialized integrator is `opus`, and the final integrated review is `fable` in a pinned terse format.
+The script validates the contract and fails fast — malformed graph, cycle, duplicate slice branch, a branch equal to SOURCE — before spending a single agent. Pre-flight's real job is the half the script **cannot** check: that every edge is real, every slice is AFK, and every acceptance criterion is unambiguous.
+
+### What the launched workflow guarantees
+
+Each piece closes a gap that would otherwise rightly make an agent refuse to merge unattended:
+
+- **Independent QA** per slice — a fresh `opus` agent forms its own picture from the tree and never sees the dev's report.
+- **Verified merge** — integration builds and runs the full suite on SOURCE and resets on red. Only a verified merge closes the slice, `gh issue close --reason completed`.
+- **Dependency-ordered** — every slice branch forks from SOURCE (never stacked on a sibling), and merges land on SOURCE serially in dependency order.
+- **Escalation ladder + circuit breaker** — dev is the output-heavy stage, so it starts on the cheap rungs (default `sonnet → sonnet → opus`) and each QA rejection climbs one; a rejection at the top rung halts only that slice's branch of the graph, with a structured **blocker**. The gates stay premium because verdicts are output-light: QA, the serialized integrator, and the final integrated review all run `opus`.
+- **Resume** — a relaunch is idempotent: the script's one live tracker read, a closed-issue reconcile, skips everything already landed before spending any agent.
 
 ## Post-run (back in this session)
 
 Read the final report and relay it. Then:
 
-- **Blockers.** For each structured blocker, grill the user via `rr-workshop:grilling`, then relaunch the same Workflow call with the resume channel: `integrated` (already-merged issue numbers), `answers` (issue number → clarification; the literal key `FINAL` carries final-review guidance), and `finalReviewDone: true` when a prior run already delivered the verdict.
-- **Resume is same-session only.** A dead session cannot resume the workflow in place — but relaunching with the same args is idempotent: the script's live reconcile (a closed-issue check on the tracker) skips everything already landed.
-
-## Boundaries
-
-- Creates no issues and edits no issue bodies — a missing or wrong breakdown goes back to `rr-workshop:to-issues`.
-- No Claude/Anthropic/Co-Authored-By attribution in any commit message or issue comment, anywhere in the run.
+- **Blockers.** Grill the user on each structured blocker via `rr-workshop:grilling`, then relaunch the same Workflow call with the **resume channel** filled in. Re-read the args contract in [orchestration.js](orchestration.js)'s header comment before composing it — the resume fields (already-merged slices, per-slice answers, final-review state) are defined there.
+- **Resume is same-session only** for a live workflow: a dead session cannot resume it in place. Relaunching from a fresh session with the same args is the recovery — the reconcile makes it idempotent.
 
 ## Red flags — STOP
 
-- About to edit `orchestration.js` for this run — per-run variation travels in `args`.
-- The Workflow call forming before the explicit launch-approval message exists.
-- A sub-issue whose body and comments were never read in pre-flight.
 - Implementing a slice in this session "because it's small".
+- A slice going into `args.graph` without `state: ready-for-agent` — a decision reserved for a human doesn't become AFK because you can guess the answer.
 
 ## Done when
 
-- [ ] Pre-flight: every sub-issue read (body + all comments); graph acyclic and approved; every branch + source pre-resolved and unique; the explicit launch-approval message exists.
-- [ ] Launch: exactly one Workflow call, and the script accepted the args.
-- [ ] Post-run: the report relayed; every blocker grilled and relaunched, or explicitly handed to the user.
+- [ ] Every slice's body, all its comments, and its acceptance criteria were read.
+- [ ] Every slice in `args.graph` carries `state: ready-for-agent`; no `ready-for-human` slice is in it.
+- [ ] Every edge is backed by both the native blocked-by relationship and its `## Blocked by` evidence, and every disagreement between the two was resolved with the user.
+- [ ] Grilling reached zero open questions.
+- [ ] The explicit launch-approval message exists and predates the Workflow call.
+- [ ] Exactly one Workflow call, on the shipped script, and it accepted the args.
+- [ ] The final report was relayed, and every blocker was either grilled and relaunched or explicitly handed to the user.

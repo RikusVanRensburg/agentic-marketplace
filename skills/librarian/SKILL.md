@@ -1,39 +1,50 @@
 ---
 name: librarian
-description: "Archive repo docs into backdated, closed, commit-linked GitHub issues. User-invoked: run /librarian."
+description: Archive repo docs into backdated, closed, commit-linked GitHub issues.
 disable-model-invocation: true
 ---
 
-The front door to the **librarian** — the archival migration that shelves repo docs into GitHub
-issues keeping their original creation date. This skill is **user-invoked only**: it runs when you
-type `/librarian`, never on its own. Gather the inputs, confirm them once, dispatch the autonomous
-`librarian` agent, and relay its report.
+Dispatch the **librarian** — the agent that shelves repo docs into GitHub issues keeping each
+doc's original creation date. Your job is the dispatch, not the migration: resolve the inputs,
+confirm them once, launch the agent, relay what comes back.
 
-## 1. Gather inputs
+## 1. Resolve the inputs
 
-Ask the user for anything not already supplied:
-- **paths** — the docs or folders to migrate (required; if absent, ask before continuing).
-- **anchor** — `first-add` (default) or `latest`.
-- **scope** label (default `scope: rr`), **state** label (default `state: needs-triage`),
-  optional **type**.
-- **delete-after** — whether to `git rm` the migrated files once their issues verify (default: no).
-- **repo** — defaults to the current clone.
+The input contract is the **Your dispatch task provides** section of
+[../../agents/librarian.md](../../agents/librarian.md). Read it, then ask the user about every
+input there they have not already fixed. Where that section states a default and the user has no
+preference, take the default and name the one you took.
+
+**Done when** every input in that section has a resolved value — supplied by the user or
+explicitly defaulted.
 
 ## 2. Confirm — the one gate
 
-Echo the resolved inputs back in a single line (paths, anchor, labels, delete-after) and get an
-explicit go-ahead. This dispatch-time confirmation is the only gate; the agent runs unattended
-once launched. **Done when** the user has approved the inputs.
+Echo the resolved inputs back in a single line and get an explicit go-ahead. This is the only
+human gate in the run; the agent asks nothing once it is launched.
 
-## 3. Dispatch the agent
+**Done when** the user has approved the inputs.
 
-Launch the **librarian** agent (Agent tool, `subagent_type: librarian`) with a task stating the
-confirmed inputs. It runs the whole migration unattended — import each doc as a backdated closed
-issue via the golden-comet Issue Import API, build the folder→parent / file→sub-issue tree, verify
-every issue against live GitHub, and remove the source files only if delete-after was set and the
-verification passed.
+## 3. Dispatch
+
+Agent tool, `subagent_type: rr-workshop:librarian`, with a task stating the confirmed inputs.
+
+**Done when** the Agent call has returned.
 
 ## 4. Relay
 
-Report the agent's summary concisely: created / skipped / failed with issue URLs, and whether any
-files were removed. Do not redo its work.
+The agent comes back one of two ways.
+
+**It finished.** Report its summary concisely: each doc as created / skipped / failed with its
+issue URL, plus whether the source files were removed.
+
+**It stopped early.** The agent halts rather than guess — a missing path, an auth or `repo`-scope
+gap, an absent `type:`/`scope:`/`state:` label, an import failure, a verification mismatch. Relay
+its stop reason **verbatim**, name the single remedy that clears it (create the label, fix the
+auth, resolve the mismatch), and hand it back for the user to carry out and re-run `/librarian`.
+The taxonomy labels and milestones are theirs to create — the remedy is the user's work, the
+report is yours.
+
+**Done when** the branch you are in is fully reported: on a finish, every doc the agent named
+carries its outcome and issue URL and the removal outcome is stated; on a stop, both the verbatim
+reason and its remedy are on the table.

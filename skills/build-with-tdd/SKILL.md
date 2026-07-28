@@ -1,161 +1,107 @@
 ---
 name: build-with-tdd
-description: Test-driven development with the red-green-refactor loop. Use when the user wants to build features or fix bugs using TDD, mentions "red-green-refactor", wants integration tests, or asks for test-first development. Also invoked by rr-workshop:orchestration's DEV stage, once per sub-issue, in an already-prepared worktree.
+description: Use when a GitHub issue or sub-issue needs implementing test-first, when a slice must be driven from red tests through independent QA to a merged issue, or when the user names one behavior to build with no tracker involved. Also invoked by rr-workshop:orchestration's DEV stage, once per sub-issue.
 ---
 
-# Test-Driven Development
+# Build with TDD
 
-## Philosophy
+Tests verify behavior through **seams** — the public boundaries where you can observe what the system does without reaching inside. Code can change entirely; tests shouldn't. Each cycle is one **tracer bullet**: a single test you watch go **red**, then the minimal code that turns it **green**.
 
-**Core principle**: Tests should verify behavior through public interfaces, not implementation details. Code can change entirely; tests shouldn't.
+See [tests.md](tests.md) for what separates a good test from a bad one, and [mocking.md](mocking.md) for where mocking is legitimate.
 
-**Good tests** are integration-style: they exercise real code paths through public APIs. They describe _what_ the system does, not _how_. They survive refactors.
+## Modes
 
-**Bad tests** are coupled to implementation. They mock internal collaborators, test private methods, or verify through external means. Warning sign: your test breaks when you refactor, but behavior hasn't changed.
+- **Standalone** — no issue. The user names the behavior to build, and you hand the result back to them.
+- **Issue-driven, attended** — you are the main-thread agent working a tracked issue (the AFK loop), and you own the slice end to end.
+- **Issue-driven, unattended** — you are the DEV sub-agent spawned by `rr-workshop:orchestration`. You are handed an issue number, a branch name, and a source branch, and you run in your own isolated worktree. Create that branch from the given source (`git checkout -b <branch> <source>`) inside your worktree, and do all git work there. Sub-agents are unavailable to you and there is no user to ask mid-run.
 
-See [tests.md](tests.md) for principles and [mocking.md](mocking.md) for mocking guidelines.
+| | Standalone | Issue-driven, attended | Issue-driven, unattended |
+| --- | --- | --- | --- |
+| [Full-Context Load](context-loading.md) | n/a — no issue | required before the first test | required before the first test |
+| `state: in-progress` | n/a | set it (step 0) | set it (step 0), and report `inProgressSet` |
+| Interface contract | ask the user, get approval | ask the user, get approval | the acceptance criteria + parent issue **are** the approved contract — derive and proceed |
+| Branch | current branch | `docs/agents/branches.md` convention | `git checkout -b <branch> <source>`, in your worktree |
+| QA gate (step 4) | n/a — the user reviews | spawn an independent QA sub-agent | the orchestrator runs an independent QA stage after you return — finish green and return |
+| Merge and close | n/a | you merge, then you close | the orchestrator's integrate stage merges and, on a verified merge, closes the issue |
 
-## Configuration
+## Repo configuration
 
-None of the following are hard requirements — this skill works on a repo that has none of them. Check for each and use it if present:
+Optional — this skill works on a repo that has none of these. Check for each and use it if present:
 
-- `docs/agents/testing.md` — if present, read it first for this repo's test framework, mocking library, assertion style, and file layout. If absent, follow the language-agnostic guidance in [tests.md](tests.md)/[mocking.md](mocking.md) and match the conventions of the existing suite.
-- `docs/agents/branches.md` — if present **and** you weren't already handed a branch name, use its naming convention. When invoked from `rr-workshop:orchestration` the branch is always pre-resolved and passed to you — never invent one of your own.
-- `<Product>/docs/agents/domain.md` — if present, read it for the glossary and ADR pointers so test names and interface vocabulary match the project's domain language.
+- `docs/agents/testing.md` — this repo's test framework, mocking library, assertion style, and test file layout. Read it before the first test. Absent, follow [tests.md](tests.md) / [mocking.md](mocking.md) and match the conventions of the existing suite.
+- `docs/agents/branches.md` — branch naming, for when you weren't handed a branch name.
+- `<Product>/docs/agents/domain.md` — the glossary and ADR pointers, so test names and interface vocabulary match the project's domain language.
 
-**Issue-driven runs additionally require the [Full-Context Load](context-loading.md)** — read the whole issue + parent PRD + sibling sub-issues + all comments + acceptance criteria, and satisfy its checklist, before writing any test. (Standalone runs are exempt — there is no issue.)
+## 0. Claim the work (issue-driven modes)
 
-## Invocation modes
+If the repo defines a `state:` label taxonomy, mark the issue in progress:
 
-- **Standalone** — `rr-workshop:build-with-tdd` with no arguments. The user provides the behavior to build; no issue tracker, no branch.
-- **Issue-driven, unattended** — invoked with an issue number as a **DEV sub-agent spawned by `rr-workshop:orchestration`**. You are handed a branch name and are already inside a private worktree, checked out on that branch, forked from the correct base — all set up **before** you were invoked. Do NOT create a branch or worktree yourself, and never `cd` elsewhere. If the repo defines a `state:` label taxonomy, mark the issue in progress (`gh issue edit <N> --add-label "state: in-progress" --remove-label "state: ready-for-agent"`); if the labels don't exist, skip silently — never create labels.
-
-> **Two execution contexts.** You may run as the **main-thread** agent (standalone), or as a **DEV sub-agent spawned by `rr-workshop:orchestration`** (orchestrated). A spawned sub-agent **cannot spawn further sub-agents and gets no mid-run user input.** Wherever a step below says "ask the user", "get approval", or "spawn a QA sub-agent", it applies to standalone runs only — the guarded notes call out what to do instead when orchestrated.
-
-## Anti-Pattern: Horizontal Slices
-
-**DO NOT write all tests first, then all implementation.** This is "horizontal slicing" — RED as "write all tests", GREEN as "write all code."
-
-Produces **crap tests**:
-
-- Tests in bulk test _imagined_ behavior, not _actual_
-- You test the _shape_ of things, not user-facing behavior
-- Tests become insensitive to real changes
-- You outrun your headlights, committing to test structure before understanding implementation
-
-**Correct**: Vertical slices via tracer bullets. One test → one implementation → repeat.
-
-```
-WRONG (horizontal):
-  RED:   test1, test2, test3, test4, test5
-  GREEN: impl1, impl2, impl3, impl4, impl5
-
-RIGHT (vertical):
-  RED→GREEN: test1→impl1
-  RED→GREEN: test2→impl2
-  ...
+```bash
+gh issue edit <N> --add-label "state: in-progress" --remove-label "state: ready-for-agent"
 ```
 
-## Workflow
+Work with the taxonomy the repo already has — where those labels are absent, skip the edit and move on rather than creating them. Unattended runs report the outcome as `inProgressSet`.
 
-### 1. Planning
+Then satisfy the [Full-Context Load](context-loading.md) — the whole issue, its parent, the sibling sub-issues, every comment, all acceptance criteria — and check off its gate before writing any test.
 
-Use the project's domain glossary (if `domain.md` exists) so test names and interface vocabulary match. Respect ADRs in the area you're touching.
+## 1. Plan the seams
 
-> **Orchestrated runs (spawned by `rr-workshop:orchestration`):** you are unattended. The acceptance criteria + parent issue **are** the approved interface contract — derive the interface and proceed. The "Confirm with user", "Get user approval", and "Ask:" steps just below apply to **standalone** runs only.
+Name the seams under test, and the behaviors you will test at each. Respect the ADRs in the area you're touching and use the domain glossary so test names read in the project's own vocabulary.
 
-Before writing any code:
+Shape those seams so testing is natural:
 
-- [ ] Confirm with user what interface changes are needed
-- [ ] Confirm which behaviors to test (prioritize)
-- [ ] Identify [deep modules](deep-modules.md) (small interface, deep implementation)
-- [ ] Design interfaces for [testability](interface-design.md)
-- [ ] List behaviors to test (not implementation steps)
-- [ ] Get user approval
+- **Deep modules** — a small interface over substantial implementation. Ask what you can hide: fewer methods, simpler parameters, more complexity behind them.
+- **Results over side effects** — `calculateDiscount(cart): Discount` is testable where `applyDiscount(cart): void` is not.
+- **Injected dependencies** — a seam is real only when a second adapter can sit behind it (see [mocking.md](mocking.md)).
 
-Ask: "What should the public interface look like? Which behaviors matter most?"
+You can't test everything: agreeing the seams up front is how the effort lands on critical paths and complex logic.
 
-**You can't test everything.** Focus on critical paths and complex logic.
+**Done when** every acceptance criterion (standalone: every behavior the user named) is mapped to a named seam and at least one listed behavior to test, in priority order — and, in the attended modes, the user has approved that list. Ask: "What should the public interface look like, and which seams should we test?"
 
-### 2. Tracer Bullet
+## 2. Red → green, one slice at a time
 
-Write ONE test that confirms ONE thing about the system:
+Work down the list, most central behavior first. Per behavior:
 
-```
-RED:   Write test for first behavior → fails
-GREEN: Write minimal code to pass → passes
-```
+1. **RED** — write ONE test. **Run it and read the failure.** Confirm it fails *because the behavior is missing* — not from a typo, a bad import, a wrong path, or a fixture that never loaded. A test that passes on its first run is asserting something that already holds: rewrite it against the behavior you actually intend, or drop it.
+2. **GREEN** — write the minimal code to pass that one test. **Run it and confirm it passes. Then run the rest of the suite and confirm nothing else broke.**
 
-Place the test file per the layout in `docs/agents/testing.md` if it exists, otherwise beside its nearest existing sibling tests.
+Work in **vertical slices**: one test → one implementation → repeat, each tracer bullet aimed by what the last cycle taught you. Tests written in bulk verify *imagined* behavior and freeze the test structure before the implementation has taught you anything.
 
-### 3. Incremental Loop
+Rules for every cycle:
 
-For each remaining behavior:
+- One test at a time, and only enough code to pass it. No speculative features for tests you haven't written.
+- Test through the public interface, on observable behavior.
+- Place the test file per the layout in `docs/agents/testing.md` if it exists, otherwise beside its nearest existing sibling tests.
 
-```
-RED:   Write next test → fails
-GREEN: Minimal code to pass → passes
-```
+**Done when** every acceptance criterion (standalone: every behavior from step 1) has at least one *passing* test that names it. Check them off one at a time against the list — the loop ends when no item is unchecked, not when the code looks finished.
 
-Rules:
+## 3. Refactor
 
-- One test at a time
-- Only enough code to pass the current test
-- Don't anticipate future tests
-- Keep tests focused on observable behavior
+Refactor once the loop's list is exhausted and the suite is green — always on green, and never inside a red → green cycle. Run the tests after each refactor step. Look for:
 
-### 4. Refactor
+- **Duplication** → extract a function or class
+- **Long methods** → break into private helpers, with the tests staying on the public interface
+- **Shallow modules** (large interface, thin implementation) → combine or deepen
+- **Feature envy** → move the logic to where the data lives
+- **Primitive obsession** → introduce value objects
+- **Existing code** the new code has revealed as problematic
 
-After tests pass, look for [refactor candidates](refactoring.md):
+## 4. QA gate (issue-driven, attended)
 
-- [ ] Extract duplication
-- [ ] Deepen modules (move complexity behind simple interfaces)
-- [ ] Apply SOLID where natural
-- [ ] Consider what new code reveals about existing code
-- [ ] Run tests after each refactor step
-
-**Never refactor while RED.** Get to GREEN first.
-
-## Checklist Per Cycle
-
-```
-[ ] Test describes behavior, not implementation
-[ ] Test uses public interface only
-[ ] Test would survive internal refactor
-[ ] Code is minimal for this test
-[ ] No speculative features
-[ ] Test idioms match docs/agents/testing.md (if it exists)
-```
-
-## QA gate (issue-driven, standalone only)
-
-> **Skip this entire gate when you were spawned by `rr-workshop:orchestration`.** A sub-agent cannot spawn sub-agents, and the orchestrator already runs an independent QA stage after you return. In that case: finish green, run the full suite, commit your branch with a no-attribution message, and return the branch name + a 1-3 sentence summary — do not spawn anything, do not merge, do not close the issue.
-
-When you ARE the main-thread agent, after the loop is green and the full suite passes, do **not** self-certify. Hand the work to an **independent QA sub-agent** for fresh-eyes verification.
+With the loop green and the full suite passing, hand the work to an **independent QA sub-agent** for fresh-eyes verification rather than self-certifying.
 
 - Spawn ONE sub-agent of type **`general-purpose`** — it must be able to run the build and tests, which a read-only analyzer agent cannot.
-- Give it an **isolated, unbiased** prompt. A fresh sub-agent can't resolve this skill's relative paths, so **inline** the context mandate (don't just link it): tell it to read, fresh, the issue body + all comments + acceptance criteria, the parent issue + all comments, and the sibling sub-issues' acceptance criteria; pass the issue identifier, the parent reference, and a pointer to the branch/working tree. Do **not** feed it your own transcript, diff narration, or self-assessment; it must form its own picture.
+- Give it an **isolated, unbiased** prompt. A fresh sub-agent can't resolve this skill's relative paths, so **inline** the context mandate: tell it to read, fresh, the issue body + all comments + acceptance criteria, the parent issue + all comments, and the sibling sub-issues' acceptance criteria; pass the issue identifier, the parent reference, and a pointer to the branch/working tree. It must form its own picture from the source of truth — keep your own transcript, diff narration, and self-assessment out of that prompt.
 - Its mandate: build from a clean state, run the suite, and check **each acceptance criterion** against the parent's intent. Return PASS, or a specific list of defects.
-- **On defects:** fix them (a fresh red→green per defect) and re-run QA. Bound this to **3 rounds**. If QA still fails after the third round, stop and escalate to the user with the three rounds of findings — do not keep grinding.
+- **On defects:** fix them (a fresh red → green per defect) and re-run QA, bounded to **3 rounds**. If QA still fails after the third round, stop and escalate to the user with the three rounds of findings.
 
-## End of session (issue-driven)
+## 5. Close out
 
-> **Orchestrated (spawned by `rr-workshop:orchestration`):** you are the DEV stage only. Commit your work to your assigned branch with a no-attribution message, then **return your branch + summary**. Do NOT merge, comment on, or close the issue — the orchestrator's integration stage owns the merge, the tracker comment, and (conditionally, per `closeOnIntegrate`) the close. The steps below are for standalone / AFK-loop runs.
-
-1. Re-run the full test suite (not just new tests).
-2. Confirm the QA gate above passed.
-3. **Log to the issue** anything the issue's author would want to know (see below).
-4. **Completion is integration, not QA-pass.** An issue is "done" when its work is committed **and merged** — not the moment QA goes green.
-   - If you integrate directly (commit + merge to the source branch — e.g. the AFK loop), close the issue **after the merge**: `gh issue close <N> --reason completed --comment "<one-line summary>"` (`--reason` accepts only `completed` or `not planned`). Closing a sub-issue automatically updates the parent's roll-up — never edit the parent body to mark progress.
-   - If you are leaving the work on a feature branch for review, do **not** close here. Print `Closes #N` for each issue worked (aggregate if multiple) and let the merged PR close it. The closed issue **keeps** its labels (including `state: in-progress`); they simply stop appearing in open-issue `state:` queries.
-5. Remind the developer (review flow only): push and open the PR themselves (`gh pr create`); they decide PR bundling.
-
-### Log to the issue
-
-Post a comment (`gh issue comment <N> --body "..."`) when implementation surfaces something the author should see — not a play-by-play. Three triggers:
-
-- A **non-trivial decision** you made that the issue or PRD didn't direct.
-- A **deviation** from the agent brief or acceptance criteria (and why).
-- A **discovered follow-up** that is out of scope for this slice (so it can become its own issue).
-
-Never include Co-Authored-By or any Claude/Anthropic attribution in issue comments or commit messages.
+1. Re-run the full test suite — not just the new tests — and confirm it is green.
+2. Commit to your branch with a conventional-commit message. Commit messages and issue comments carry your own words only: no `Co-Authored-By`, no Claude or Anthropic attribution.
+3. **Log to the issue** (attended issue-driven runs — unattended runs report upward instead, and the integrate stage writes to the tracker) with `gh issue comment <N> --body "..."` when the implementation surfaced something the issue's author would want to know — not a play-by-play. Three triggers: a **non-trivial decision** the issue or PRD didn't direct; a **deviation** from the agent brief or acceptance criteria, and why; a **discovered follow-up** that is out of scope for this slice, so it can become its own issue.
+4. Finish per your mode:
+   - **Unattended** — return the branch name, `inProgressSet`, `committed`, a 1-3 sentence summary, any new files or APIs downstream issues will touch, and any out-of-scope TODOs. Leave the merge, the tracker comment, and the close to the integrate stage.
+   - **Attended, integrating directly** — an issue is done when its work is **merged**, not when QA goes green. Merge to the source branch, then close: `gh issue close <N> --reason completed --comment "<one-line summary>"` (`--reason` accepts only `completed` or `not planned`). Closing a sub-issue rolls up to the parent automatically, so the parent body needs no edit.
+   - **Attended, leaving the work on a feature branch for review** — print `Closes #N` for each issue worked (aggregated if several) and let the merged PR close them. The developer pushes and opens the PR themselves (`gh pr create`); they decide the PR bundling.
+   - **Standalone** — hand back what you built and the tests that cover it.

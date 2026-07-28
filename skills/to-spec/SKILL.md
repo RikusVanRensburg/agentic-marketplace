@@ -1,11 +1,11 @@
 ---
 name: to-spec
-description: Synthesize resolved understanding — a wayfinder map's decisions or the current conversation — into a spec (PRD) published as a GitHub issue after explicit approval. Use when the way is clear and the user wants the spec written, says "to spec" or "write the PRD", or when rr-workshop:orchestrated-run reaches its spec stage.
+description: Use when the way is clear and the user wants the spec (PRD) written — "to spec", "write the PRD" — or when rr-workshop:orchestrated-run reaches its spec stage.
 ---
 
 The way is clear — the deciding is done. This skill **synthesizes** what was decided into a **spec** (you may know it as a PRD), published as a GitHub issue the rest of the pipeline builds from. Synthesis, not interviewing: wayfinder and grilling already asked the questions, and re-opening them now is this skill's defining failure. The user is consulted at exactly two points — the seam check (step 3) and the approval (step 5).
 
-**Standing rule:** every seam choice and Implementation Decision is a finding — `rr-workshop:defending-findings` applies throughout. A decision ships as a **defended decision**: one falsifiable claim, its evidence cited inline, its alternatives named with the attack that killed each.
+**Standing rule:** every seam choice and Implementation Decision is a finding — `rr-workshop:defending-findings` applies throughout. Each ships as a **defended decision**, in the three parts [references/spec-template.md](references/spec-template.md) fixes.
 
 **Glossary inline:** take each new or sharpened term through `rr-workshop:domain-modeling` the moment it crystallizes, not as a batch at the end.
 
@@ -18,31 +18,43 @@ The way is clear — the deciding is done. This skill **synthesizes** what was d
 
 Either way, ground in the repo: read the code the spec touches, write in the project's domain glossary vocabulary, and respect ADRs in the area.
 
+Gathering is done when every decision the spec will cite is in hand at full resolution — zoomed from its ticket, not carried as the map's one-line summary.
+
 ### 2. Sketch the modules and seams
 
-Sketch the modules to build or modify and the seams the feature will be tested at, in the vocabulary of [references/architecture-language.md](references/architecture-language.md) used exactly — module, interface, seam, adapter, depth, leverage, locality.
+Sketch the modules to build or modify and the seams the feature will be tested at. Read [references/architecture-language.md](references/architecture-language.md) and use its terms exactly.
 
-- **Deletion test on every proposed module**: delete it in your head — if complexity reappears across N callers, the module earns its keep; if complexity just vanishes, it was a pass-through — cut it.
+Principles:
+
+- **The deletion test**, on every proposed module. Delete it in your head: if complexity reappears across N callers, the module earns its keep; if complexity just vanishes, it was a pass-through — cut it.
 - **Prefer existing seams**, at the highest point possible. Fewer seams is better; the ideal count is one.
-- **A new seam must name two adapters.** One adapter is a hypothetical seam; introduce one only when something actually varies across it.
-- Prefer **depth**: a lot of behaviour behind a small interface, testable at that interface.
+- **Two adapters make a seam real.** One adapter is a hypothetical seam — introduce a new one only when something actually varies across it.
+- **Prefer depth** — a lot of behaviour behind a small interface. Depth is a property of the interface, not the implementation: a deep module can be composed internally of small swappable parts its interface never exposes.
+- **The interface is the test surface.** Callers and tests cross the same seam; wanting to test _past_ an interface means the module is the wrong shape.
+
+The sketch is done when every proposed module carries a deletion-test verdict and every new seam names its two adapters.
 
 ### 3. Check the seams with the user
 
-Present the sketch — modules, seams, deletion-test verdicts — and ask whether it matches their expectations and which modules they want tests for. This is the one design question synthesis cannot settle alone. Iterate until the user acknowledges the sketch.
+Present the sketch — modules, seams, deletion-test verdicts — and ask both:
 
-### 4. Draft locally — nothing on GitHub yet
+1. Does this shape match what they expect?
+2. **Which modules do they want tested?**
 
-Render the spec per [references/spec-template.md](references/spec-template.md), including its metadata header (title; `type:` — default `feat`, offer to override; `scope:` where the repo's label taxonomy exists). Write it to a local draft:
+This is the one design question synthesis cannot settle alone. Iterate until both are settled, then **echo the named module list back** before moving on: that list is a hard input to the spec's Testing Decisions, and step 4 renders it verbatim.
+
+### 4. Draft locally
+
+Render the spec per [references/spec-template.md](references/spec-template.md), starting with the metadata header the template specifies. Name modules in prose — the template's ground rules govern paths and snippets. Write it to a local draft:
 
 - `docs/specs/<slug>.md` when the repo has a `docs/` directory
 - `<slug>.md` at the repo root otherwise
 
-(`<slug>` = kebab-case of the spec title.) Tell the user the path, and state plainly: **nothing has been created on GitHub yet.**
+(`<slug>` = kebab-case of the spec title.) Tell the user the path, and that the spec is **local only** — publishing waits for Gate 1.
 
 ### 5. Iterate to explicit approval — Gate 1
 
-Present the draft, apply the user's edits to the file, re-show. Loop until the user **explicitly approves**. That approval **is Gate 1 of the pipeline**: the human sign-off before anything downstream — slices, agents, code — can exist. `gh issue create` runs only after the approval message exists; settling the content locally first is the whole point.
+Present the draft, apply the user's edits to the file, re-show. Loop until the user **explicitly approves**. That approval **is Gate 1 of the pipeline**: the human sign-off before anything downstream — slices, agents, code — can exist. `gh issue create` runs only after the approval message exists.
 
 ### 6. Publish, link, verify, index
 
@@ -56,32 +68,25 @@ Present the draft, apply the user's edits to the file, re-show. Loop until the u
      ${FITTING_MILESTONE:+--milestone "$FITTING_MILESTONE"}
    ```
 
-   A separate `--label` flag per label — never one comma-joined string. When the repo lacks the `type:`/`scope:` taxonomy, create without labels: taxonomy labels are pre-seeded team vocabulary, never created here (label mechanics in [../../docs/github-operations.md](../../docs/github-operations.md)). The spec is a **parent**, so it never carries `state: ready-for-agent` — slices earn that label in `rr-workshop:to-issues`.
+   One `--label` flag per label. `$MAP_NUMBER` is set when a wayfinder map exists; `$FITTING_MILESTONE` only when an existing open milestone already covers this spec — reuse one, never create one. Taxonomy labels are pre-seeded team vocabulary, so when the repo lacks the `type:`/`scope:` taxonomy, create without those flags (label mechanics in [../../docs/github-operations.md](../../docs/github-operations.md)). `state:` labels belong on slices — `rr-workshop:to-issues` applies them.
 
-   `--assignee @me` — the spec is a singleton parent with no claiming model, so assigning its creator is safe (contrast with `to-issues` slices, which must stay unassigned — see [github-operations.md](../../docs/github-operations.md)'s "Assignee on creation"). `--type PRD` is the native Issue Type and is **unconditional** — a spec is structurally a PRD regardless of what its `type:` label says the underlying work is; the two are different dimensions, not duplicates. `--parent` is passed only when a wayfinder map exists (`$MAP_NUMBER` set) — replaces the old create-then-manually-attach approach. `--milestone` is passed only when an existing open milestone already fits (`$FITTING_MILESTONE` set from checking whether the map, or an obviously-matching open milestone, already covers this spec) — never create one.
+   **If the command exits non-zero, STOP and surface the error** — it did not publish. On success, **echo the issue URL** to the user.
 
-   **If the command exits non-zero, STOP and surface the error** — do not claim it published. On success, **echo the issue URL** to the user.
-
-2. **Verify the link** — when a map exists, confirm the spec attached as a native sub-issue of the map (`--paginate` verify per [github-operations.md](../../docs/github-operations.md)'s "Create → verify"); `--parent` at creation can still fail to attach silently.
+2. **Verify the link** — when a map exists, confirm the spec attached as a native sub-issue of the map (`--paginate` verify per [github-operations.md](../../docs/github-operations.md)'s "Create → verify"). `--parent` at creation can fail to attach silently, and this check is what catches it.
 
 3. **Index on the map** — append the destination-reached entry to the map's Decisions so far: `[<spec title>](<url>) — destination reached: spec published`. The spec subtree carries the effort from here.
 
 4. Point at the next step: `rr-workshop:to-issues` to break the spec into slice sub-issues.
 
-## Red flags — STOP
-
-- An Implementation Decision that reads as a bare assertion — no falsifiable claim, no inline evidence, no killed alternative.
-- About to ask the user a question a closed ticket already answers — zoom the ticket instead.
-- `gh issue create` forming before the user's explicit approval message exists.
-- A new seam with one adapter.
-- A file path or code snippet in the draft — unless it's a trimmed prototype snippet encoding a decision (the template's one exception).
-
 ## Done when
 
-- [ ] Seam sketch acknowledged by the user.
+- [ ] The user acknowledged the seam sketch.
+- [ ] The user named the modules to test, and that list was echoed back before drafting.
+- [ ] Every proposed module carries a deletion-test verdict, and every new seam names two adapters.
 - [ ] Local draft file exists at the stated path.
 - [ ] The publish command ran only after an explicit approval message — Gate 1 passed.
 - [ ] The new issue URL was echoed to the user.
 - [ ] When a map exists: the spec is linked and verified as a sub-issue of the map, and the destination-reached entry sits in the map's Decisions so far.
-- [ ] Every Implementation Decision carries inline evidence.
+- [ ] Every Implementation Decision ships as a defended decision.
+- [ ] Testing Decisions names exactly the modules the user picked at the seam check.
 - [ ] The glossary reflects every term this spec introduced or sharpened.

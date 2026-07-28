@@ -1,8 +1,8 @@
 # When to Mock
 
-Language-agnostic principles. If `docs/agents/testing.md` exists, read it too for this repo's mocking library and idioms.
+Language-agnostic principles; the repo's own mocking library and idioms live in `docs/agents/testing.md`.
 
-Mock at **system boundaries** only:
+Mock at **system boundaries** only — those are the seams worth a test double:
 
 - External APIs (payment, email, etc.)
 - Databases (sometimes — prefer a test DB)
@@ -14,7 +14,7 @@ Don't mock:
 - Internal collaborators
 - Anything you control
 
-Mocking your own collaborators couples the test to your current implementation. Refactor an internal seam and the mocks break even though behavior didn't change — the hallmark of a bad test.
+Mocking your own collaborators couples the test to your current implementation. Rearrange the internals and the mocks break even though behavior didn't change — the hallmark of a bad test.
 
 ## Designing for Mockability
 

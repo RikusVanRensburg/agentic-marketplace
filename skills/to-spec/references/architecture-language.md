@@ -1,6 +1,7 @@
 # Architecture language
 
-Shared vocabulary for the seam sketch and every Implementation Decision in the spec. Use these terms exactly — don't substitute "component," "service," "API," or "boundary." Consistent language is the whole point.
+Shared vocabulary for the seam sketch and every Implementation Decision in the spec. Use these
+terms exactly; each entry's _Avoid_ line names the looser word it displaces.
 
 ## Terms
 
@@ -19,7 +20,7 @@ What's inside a module — its body of code. Distinct from **Adapter**: a thing 
 Leverage at the interface — the amount of behaviour a caller (or test) can exercise per unit of interface they have to learn. A module is **deep** when a large amount of behaviour sits behind a small interface. A module is **shallow** when the interface is nearly as complex as the implementation.
 
 **Seam** _(from Michael Feathers)_
-A place where you can alter behaviour without editing in that place. The *location* at which a module's interface lives. Choosing where to put the seam is its own design decision, distinct from what goes behind it.
+A place where you can alter behaviour without editing in that place. The *location* at which a module's interface lives. Choosing where to put the seam is its own design decision, distinct from what goes behind it. A module can carry **internal seams** — private to its implementation, used by its own tests — as well as the **external seam** at its interface.
 _Avoid_: boundary (overloaded with DDD's bounded context).
 
 **Adapter**
@@ -30,13 +31,6 @@ What callers get from depth. More capability per unit of interface they have to 
 
 **Locality**
 What maintainers get from depth. Change, bugs, knowledge, and verification concentrate at one place rather than spreading across callers. Fix once, fixed everywhere.
-
-## Principles
-
-- **Depth is a property of the interface, not the implementation.** A deep module can be internally composed of small, mockable, swappable parts — they just aren't part of the interface. A module can have **internal seams** (private to its implementation, used by its own tests) as well as the **external seam** at its interface.
-- **The deletion test.** Imagine deleting the module. If complexity vanishes, the module wasn't hiding anything (it was a pass-through). If complexity reappears across N callers, the module was earning its keep.
-- **The interface is the test surface.** Callers and tests cross the same seam. If you want to test *past* the interface, the module is probably the wrong shape.
-- **One adapter means a hypothetical seam. Two adapters means a real one.** Don't introduce a seam unless something actually varies across it.
 
 ## Relationships
 
