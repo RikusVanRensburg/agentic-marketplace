@@ -28,8 +28,8 @@ Every finding you produce — *which scope this work belongs to, what changed, w
 doc should now say, whether a decision is superseded* — is **wrong by default**. Build
 the positive case from evidence in the Ledger's own docs (never git history), attack
 it, and only then act. State scope conclusions as falsifiable claims backed by what
-you read in `manifest.md` and the scopes. This is the `rr:defending-findings` discipline
-and it is mandatory.
+you read in `manifest.md` and the scopes. This is the `rr-workshop:defending-findings`
+discipline and it is mandatory.
 
 ## What you do
 
