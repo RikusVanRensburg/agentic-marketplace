@@ -1,11 +1,11 @@
 ---
 name: quick-issue
-description: Log an already-clear idea as a well-structured GitHub issue, fast — or point at an existing sparse issue to investigate and populate it in place. No wayfinding, no grilling, no spec. Use when the ask is already clear in your head and you just want it on the tracker now, or when an issue already exists but is thin and needs fleshing out. NOT for a fuzzy problem that needs exploring first (use core:github_create-issue for that — it interviews to find the problem), NOT for multi-stage feature work that needs a breakdown (use rr-workshop:to-spec instead), and NOT for checking an issue against the rest of the tracker for duplicates (use rr:issue-triage for that, separately, only when asked). Triggers include "log an issue for X", "quick issue", "just file this", "populate issue #N", "flesh out #N".
+description: Use when the ask is already clear and you just want it filed now, or an existing issue is thin and needs fleshing out. NOT for a fuzzy problem needing exploration (use core:github_create-issue), NOT for multi-stage work needing a breakdown (use rr-workshop:to-spec), NOT for duplicate-checking (use rr:issue-triage, only when asked). Triggers include "log an issue for X", "quick issue", "just file this", "populate issue #N", "flesh out #N".
 ---
 
 # Quick Issue
 
-The fast path: no map, no interview, no spec draft. Two entry points, both landing on the same
+No wayfinding, no grilling, no spec draft. Two entry points, both landing on the same
 well-structured shape:
 
 - **Mode A — create.** The idea is already decided; turn it into one new issue.
@@ -39,9 +39,9 @@ gh label list --limit 200 --json name
 Look for a `type:`-prefixed and a `scope:`-prefixed family. Pick the `type:` value whose
 meaning fits (a new capability, a bug fix, or general upkeep — the label text varies by repo;
 match by meaning, not by an assumed literal string). Pick a `scope:` value only if one clearly
-applies; otherwise omit it. **Never create a missing label** — if the repo has no `type:`/
-`scope:` taxonomy at all, create without those labels and tell the user; taxonomy labels are
-pre-seeded team vocabulary, never invented here.
+applies; otherwise omit it. Only apply labels that already exist in the repo's taxonomy — if
+the repo has none, create the issue without those labels and tell the user; taxonomy labels
+are pre-seeded team vocabulary.
 
 ### 3. Map to native issue type
 
@@ -85,8 +85,8 @@ Render the body as exactly three sections — no more:
 frontier depending on it staying unassigned, unlike a slice in the heavier pipeline. Omit
 `--label`/`--type` flags the repo doesn't support, per steps 2-3.
 
-**If the command exits non-zero, STOP and surface the error** — do not claim it published.
-On success, **echo the issue URL** to the user.
+**If the command exits non-zero, STOP and report the exact error.** Only report success — with
+the issue URL — when the command actually exited zero.
 
 ## Mode B: populate an existing sparse issue
 
@@ -104,11 +104,10 @@ If none was given, ask for one before continuing.
 
 ### 2. Investigate lightly
 
-Read the existing (sparse) title and body. If the ask references specific behavior, files, or
-components, a light, targeted look at the codebase is fine to sharpen the Problem/Context/
-Acceptance Criteria — this is **not** the multi-phase interview `core:github_create-issue`
-does; if something is still genuinely unclear after that, ask the user one direct question
-rather than guess or fabricate detail.
+Read the existing (sparse) title and body. Look only at files or components the ask
+explicitly names — this is **not** the multi-phase interview `core:github_create-issue` does.
+Stop once Problem, Context, and at least one Acceptance Criterion can be written without
+guessing; if you still can't, ask the user one direct question rather than open a second round.
 
 ### 3. Render the populated body
 
@@ -135,19 +134,6 @@ Then, **only for fields that are currently empty** (check the JSON from step 1 f
 
 **If any edit fails, STOP and surface the error.** Report exactly what was filled in and what
 was already present and left untouched.
-
-## Red flags — STOP
-
-- A multi-phase interview forming — that's `core:github_create-issue`'s job; ask only for
-  what's missing, once.
-- A body with more than the three sections — no root-cause analysis, no affected-files list,
-  no wayfinding ceremony. That's what makes this the fast path.
-- Creating a `type:`/`scope:` label that doesn't already exist.
-- Reaching into another plugin's file for mechanics this skill already carries itself.
-- Mode B overwriting an existing assignee, label, or native type instead of only filling gaps.
-- Mode B discarding the existing sparse content instead of incorporating it.
-- Running a duplicate/triage check as part of either mode — that only happens via
-  `rr:issue-triage`, invoked separately, only when asked.
 
 ## Done when
 
