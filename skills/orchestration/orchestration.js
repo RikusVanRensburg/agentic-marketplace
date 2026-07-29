@@ -377,8 +377,11 @@ if (anyIntegrated && !input.finalReviewDone) {
       `Return committed (true ONLY if a green fix is committed), commitRef, and a 1-3 sentence summary.`,
     ].filter(Boolean).join('\n'), { label: `remediate:r${round}:${rungLabel}`, phase: 'Final Review', schema: REMEDIATE_SCHEMA, model: rung.model, effort: rung.effort })
     if (!fix) {
-      if (!fixerInfraRetried) { fixerInfraRetried = true; round--; continue } // infrastructure - don't burn a rung
-      blockers.push({ issue: 'FINAL', reason: 'remediation agent unavailable (infrastructure, after same-rung retry)', findings: finalReview.findings })
+      // null = no result came back: infrastructure, OR a safety refusal on the findings' content (current
+      // models decline cyber/bio-adjacent work with no error). Same handling either way - one same-rung retry
+      // that doesn't burn a rung, then a blocker naming both candidate causes.
+      if (!fixerInfraRetried) { fixerInfraRetried = true; round--; continue }
+      blockers.push({ issue: 'FINAL', reason: 'remediation agent returned no result - infrastructure or refusal (after same-rung retry)', findings: finalReview.findings })
       remediationAborted = true
       break
     }
