@@ -7,7 +7,7 @@ The **breakdown** exists; now drive **every** slice to committed-green on one **
 
 An interactive **pre-flight** in this session freezes the slice order, the run branch and the worktree path. The **relay** then passes the baton from one slice sub-agent to the next down that order until it is exhausted, and hands the integrated whole to one review and then to you.
 
-**Standing rule:** `rr-workshop:defending-findings` applies to **pre-flight** — every edge and every branch decision is defended before the relay starts. Inside the relay the discipline travels by value: every prompt the relay dispatches opens with [../defending-findings/DEFEND-PREAMBLE.md](../defending-findings/DEFEND-PREAMBLE.md) inlined **verbatim**, because a fresh sub-agent cannot resolve these relative paths.
+**Standing rule:** `rr-workshop:defending-findings` applies to **pre-flight** — every edge and every branch decision is defended before the relay starts. The relay's slice stages return a plain verdict plus defects: that cost belongs to the one-time graph decisions, not to a check that reruns per slice, per rung.
 
 ## Prerequisites
 
@@ -37,7 +37,6 @@ The relay asks you nothing once it starts; every ambiguity is resolved now.
 1. **Create the worktree** on the run branch, forked from the base branch: `git worktree add -b <run-branch> <worktree-path> <base-branch>`. Resuming a run whose branch already exists, drop the `-b` and pass the run branch as the commit-ish. Done when `git -C <worktree-path> rev-parse --abbrev-ref HEAD` prints the run branch.
 2. **Reconcile against the tracker**, once: `gh api --paginate repos/{owner}/{repo}/issues/<PARENT>/sub_issues --jq '.[] | select(.state=="closed") | .number'`. Every slice it names is already landed — drop it from the order and spend no agent on it. This single read is what makes a relaunch idempotent.
 3. **Pass the baton, one slice at a time.** For the next slice in the order, dispatch **one** `general-purpose` sub-agent on that slice's current rung, and inline into its prompt everything it needs, since it can resolve none of this skill's paths:
-   - The contents of [../defending-findings/DEFEND-PREAMBLE.md](../defending-findings/DEFEND-PREAMBLE.md), verbatim.
    - The instruction to invoke `rr-workshop:build-with-tdd` and work it in its **`Issue-driven, shared worktree`** mode — that mode owns the loop, the branch handling and the report shape.
    - The slice's issue number, the parent issue's URL, the absolute worktree path, and the run branch name.
 4. **Verify, then close.** In the worktree on the run branch, build clean and run the **full** suite. Green ⇒ `gh issue close <n> --reason completed`, and the baton passes to the next slice.
@@ -45,7 +44,7 @@ The relay asks you nothing once it starts; every ambiguity is resolved now.
 
 ## Stage 3 — Review and disposition
 
-**One review sub-agent, freshly isolated,** on `opus`. Its prompt carries `DEFEND-PREAMBLE.md` verbatim and tells it to form its own picture from the tracker: the parent's body + all comments, and the acceptance criteria of every slice that landed. Its mandate is the integrated whole — build from a clean state in the worktree on the run branch, run the full suite, and judge the landed work against the parent's intent, returning PASS or a specific list of defects. Name the slices that never landed as out of scope, so their absent functionality reads as scope rather than as a defect. Keep the relay's transcript and the per-slice reports out of that prompt, so the picture stays independent.
+**One review sub-agent, freshly isolated,** on `opus`. This is the run's one findings-producing dispatch, and [../defending-findings/DEFEND-PREAMBLE.md](../defending-findings/DEFEND-PREAMBLE.md) names `review` among the stages that inject it, so its prompt opens with that file inlined **verbatim** — a fresh sub-agent cannot resolve these relative paths. Then tell it to form its own picture from the tracker: the parent's body + all comments, and the acceptance criteria of every slice that landed. Its mandate is the integrated whole — build from a clean state in the worktree on the run branch, run the full suite, and judge the landed work against the parent's intent, returning PASS or a specific list of defects. Name the slices that never landed as out of scope, so their absent functionality reads as scope rather than as a defect. Keep the relay's transcript and the per-slice reports out of that prompt, so the picture stays independent.
 
 **Then the disposition is yours.** Relay the verdict and offer the choices: merge the run branch into the base branch, open a PR from it, remediate the findings, leave the worktree standing for later, or discard it. There is no automatic fix-and-regrade loop here — a `Workflow` runs one because no human is reachable inside it, and the relay has you right here (ADR 0003). The base branch changes only on your instruction; until then the relay's every commit sits on the run branch.
 
