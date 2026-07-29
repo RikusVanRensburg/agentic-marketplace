@@ -1,6 +1,6 @@
 export const meta = {
   name: 'orchestration',
-  description: 'Implement every sub-issue of a GitHub breakdown: dependency-ordered dev (rr-workshop:build-with-tdd, sonnet-first escalating model ladder) -> independent QA (opus) -> serialized verified git merge into a dedicated integration branch (opus), then a final integrated review (opus, terse verdicts) with ladder-bounded remediation - circuit breaker and structured blockers throughout',
+  description: 'Implement every sub-issue of a GitHub breakdown: dependency-ordered dev (rr-workshop:build-with-tdd, escalating model+effort ladder (default in the script\'s LADDER const)) -> independent QA (opus) -> serialized verified git merge into a dedicated integration branch (opus), then a final integrated review (opus, terse verdicts) with ladder-bounded remediation - circuit breaker and structured blockers throughout',
   whenToUse: 'Launched by rr-workshop:orchestration after its interactive pre-flight (Gate 2). Static script - never edited per run (ADR 0002); all per-run data arrives via args: { parent, source, graph, ladder?, integrated?, answers?, finalReviewDone? }.',
   phases: [
     { title: 'Build', detail: 'dev (rr-workshop:build-with-tdd, worktree-isolated, ladder model) + independent QA (opus) per issue' },
@@ -23,9 +23,14 @@ export const meta = {
 //                                                   //   description field: issue bodies live on GitHub and every agent
 //                                                   //   reads issue #N fresh - a copy here would be a second source of
 //                                                   //   truth that goes stale mid-run.
-//   ladder: ['sonnet','sonnet','opus'],             // optional: escalation ladder for BOTH dev rounds and final-review
-//                                                   //   remediation, rungs from haiku|sonnet|opus|fable; its length IS
-//                                                   //   each loop's round budget (default ['sonnet','sonnet','opus'])
+//   ladder: [{ model: 'sonnet', effort: 'xhigh' }, 'opus'],
+//                                                 // optional: escalation ladder for BOTH dev rounds and
+//                                                 //   final-review remediation. A rung is { model, effort } -
+//                                                 //   or a bare model string, which means effort 'high'.
+//                                                 //   model from haiku|sonnet|opus|fable, effort from
+//                                                 //   low|medium|high|xhigh|max. Its length IS each loop's
+//                                                 //   round budget. For the default, read the LADDER const
+//                                                 //   below - it is the only place the default is stated.
 //   integrated: [124],                              // optional resume: issue numbers merged in a prior run
 //   answers: { 125: 'use approach B',               // optional resume: human answers to prior blockers, by issue number;
 //              FINAL: 'guidance' },                 //   the literal key FINAL carries guidance for final-review remediation
