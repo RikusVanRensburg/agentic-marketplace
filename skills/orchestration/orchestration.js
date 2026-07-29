@@ -249,7 +249,9 @@ async function buildIssue(n) {
       // content (current models decline cyber/bio-adjacent work with no error). Same handling either way -
       // one same-rung retry, then a blocker - but the post-run grilling needs to consider both causes.
       if (!infraRetried) { infraRetried = true; round--; continue }
-      status[n] = 'blocked'; blockers.push({ issue: n, reason: 'dev agent returned no result - infrastructure or refusal (after same-rung retry)', rounds }); return null
+      // tier: rounds[] is still empty on a round-1 null, so the rung must be named here or the blocker
+      // carries no tier at all - and the grilling cannot tell a cheap-rung refusal from infrastructure.
+      status[n] = 'blocked'; blockers.push({ issue: n, reason: 'dev agent returned no result - infrastructure or refusal (after same-rung retry)', tier: rungLabel, rounds }); return null
     }
     if (!dev.committed) {
       // A cheap dev failing to deliver a commit is a capability outcome, not an error - it climbs the ladder like a QA rejection.
@@ -265,7 +267,8 @@ async function buildIssue(n) {
       // models decline cyber/bio-adjacent work with no error). Either way a missing verdict must not escalate
       // the ladder or trip the breaker - one same-rung retry, then a blocker naming both candidate causes.
       if (!infraRetried) { infraRetried = true; round--; continue }
-      status[n] = 'blocked'; blockers.push({ issue: n, reason: 'QA agent returned no result - infrastructure or refusal (after same-rung retry)', rounds }); return null
+      // tier: as at the dev site - the round's dev rung, since QA itself is pinned.
+      status[n] = 'blocked'; blockers.push({ issue: n, reason: 'QA agent returned no result - infrastructure or refusal (after same-rung retry)', tier: rungLabel, rounds }); return null
     }
     rounds.push({ round, tier: rungLabel, devSummary: dev.summary, pass: qa.pass, defects: qa.defects || [] })
     if (qa.pass) return { issue: n, branch: dev.branch, dev }

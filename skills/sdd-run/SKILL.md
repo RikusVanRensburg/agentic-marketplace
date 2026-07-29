@@ -1,6 +1,6 @@
 ---
 name: sdd-run
-description: Subagent-driven run of a substantial change end-to-end on GitHub Issues, from foggy idea to code on one run branch — slices land serially in a single shared worktree, with no Workflow tool. Use when the user says "sdd-run" over a seed, wants a breakdown driven by a relay of subagents rather than a Workflow fan-out, or wants an existing run's issue tree resumed by a relay of subagents rather than a Workflow fan-out.
+description: Subagent-driven run of a substantial change end-to-end on GitHub Issues, from foggy idea to code on one run branch — slices land serially in a single shared worktree, with no Workflow tool. Use when the user says "sdd-run" over a seed, or wants a breakdown built — or an existing run's issue tree resumed — by a relay of subagents rather than a Workflow fan-out.
 ---
 
 You are the **relay's router** — the skill that sequences this plugin's stage skills into one **pipeline**, from foggy idea to code committed on the **run branch**: the one branch every slice of this run commits to, and the branch the relay's shared worktree sits on. This skill decides **which stage runs now**, asserts the gates between stages, and drives the merge back into the **base branch** the run branch forked from — which stays as it was until the human chooses that merge.
@@ -21,7 +21,7 @@ it is the single source of truth for every row this skill does not define below.
 Row 6 turns on three conditions. Check the **disposition** first: it is the condition this pipeline adds, and the one that reads as already satisfied once the other two hold.
 
 - **Disposition** — the human chose *merge* at the relay's disposition step (`rr-workshop:sdd-implement`, Stage 3), and you have their words for it. A run whose review passed and whose human chose to open a PR, remediate, or leave the worktree standing sits parked on that choice: report where it stands and start nothing. It reaches row 6 when they say merge, and only then.
-- **Slice state** — `gh issue list`, or `gh issue view <n> --json state` per slice. Here CLOSED means *committed green on the run branch*: the relay closes a slice once it built clean with a green full suite there. That is a narrower claim than the Workflow path's verified merge onto an integration branch, so where `pipeline.md` glosses a closed slice as a merge onto SOURCE, read this meaning instead — the run branch is the only branch this run touches. The state is the whole record; a landed slice carries no comment.
+- **Slice state** — `gh issue list`, or `gh issue view <n> --json state` per slice. Here CLOSED means *committed green on the run branch*: the relay closes a slice once it built clean with a green full suite there — a narrower claim than the Workflow path's verified merge onto an integration branch, and the run branch is the only branch this run touches. The state is the whole record; a landed slice carries no comment.
 - **Branch state** — `git merge-base --is-ancestor <run branch> <base branch>` exits **0** when the base branch already carries the run's commits. A **non-zero** exit is what puts the run on row 6.
 
 **No row matches** — every slice closed and the run branch already in the base branch: the run is finished. Say so, and start nothing.
@@ -30,7 +30,7 @@ Row 6 turns on three conditions. Check the **disposition** first: it is the cond
 
 The merge is the run's one irreversible act on the human's branch. It happens on the user's **go-ahead for this merge** — of this run branch, into the base branch as it stands now — with every conflict resolved alongside them.
 
-Mechanics: [../orchestrated-run/references/merge-back.md](../orchestrated-run/references/merge-back.md), written in the Workflow path's vocabulary — read its SOURCE as the run branch, its BASE as the base branch, and its relaunch as `rr-workshop:sdd-implement` against the same run branch.
+Mechanics: [../orchestrated-run/references/merge-back.md](../orchestrated-run/references/merge-back.md), written in the Workflow path's vocabulary — its opening **On the relay path** note remaps that vocabulary and scopes the claims that read differently here.
 
 | Excuse | Reality |
 |---|---|
