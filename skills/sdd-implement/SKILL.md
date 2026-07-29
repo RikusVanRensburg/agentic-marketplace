@@ -34,17 +34,18 @@ The relay asks you nothing once it starts; every ambiguity is resolved now.
 
 ## Stage 2 — Run the relay
 
-1. **Create the worktree** on the run branch, forked from the base branch: `git worktree add -b <run-branch> <worktree-path> <base-branch>`. Resuming a run whose branch already exists, drop the `-b` and pass the run branch as the commit-ish. Done when `git -C <worktree-path> rev-parse --abbrev-ref HEAD` prints the run branch.
+1. **Create the worktree** on the run branch, forked from the base branch: `git worktree add -b <run-branch> <worktree-path> <base-branch>`. Resuming a run whose branch already exists, drop the `-b` and pass the run branch as the commit-ish. Done when `git -C <worktree-path> rev-parse --abbrev-ref HEAD` prints the run branch, and its HEAD — `git -C <worktree-path> rev-parse HEAD` — is written down as the run's first **green mark**.
 2. **Reconcile against the tracker**, once: `gh api --paginate repos/{owner}/{repo}/issues/<PARENT>/sub_issues --jq '.[] | select(.state=="closed") | .number'`. Every slice it names is already landed — drop it from the order and spend no agent on it. This single read is what makes a relaunch idempotent.
 3. **Pass the baton, one slice at a time.** For the next slice in the order, dispatch **one** `general-purpose` sub-agent on that slice's current rung, and inline into its prompt everything it needs, since it can resolve none of this skill's paths:
    - The instruction to invoke `rr-workshop:build-with-tdd` and work it in its **`Issue-driven, shared worktree`** mode — that mode owns the loop, the branch handling and the report shape.
-   - The slice's issue number, the parent issue's URL, the absolute worktree path, and the run branch name.
-4. **Verify, then close.** In the worktree on the run branch, build clean and run the **full** suite. Green ⇒ `gh issue close <n> --reason completed`, and the baton passes to the next slice.
-5. **On red, climb one rung.** Reset the worktree to the last commit the run branch was green at, then re-dispatch the same slice on the next rung up, fed the failures from the round before. At the top rung, write a structured blocker to the slice's issue — the slice, the rungs tried, and what failed at each — and end the relay there, handing the untouched remainder of the order back to the user.
+   - The absolute worktree path, plus the instruction that **every** command it runs — git, build, test — runs inside that path. A dispatched agent starts in this session's working directory, so tell it to move to the worktree first and to keep every command there.
+   - The slice's issue number, the parent issue's URL, and the run branch name.
+4. **Verify, then close and re-mark.** In the worktree, build clean and run the **full** suite. Green ⇒ `gh issue close <n> --reason completed`, then move the **green mark** to what you just verified: `git -C <worktree-path> rev-parse HEAD`, written down in place of the previous mark. The baton passes to the next slice.
+5. **On red, climb one rung.** Return the worktree to the green mark first, so the failed attempt leaves nothing behind: `git -C <worktree-path> reset --hard <green-mark>` rewinds the tracked files, then `git -C <worktree-path> clean -fd` removes the files that attempt created. Re-dispatch the same slice on the next rung up, fed the failures from the round before. At the top rung, write a structured blocker to the slice's issue — the slice, the rungs tried, and what failed at each — then stop dispatching: no later slice starts, and the run goes to **Stage 3** on the slices that did land, carrying the blocker with it.
 
 ## Stage 3 — Review and disposition
 
-**One review sub-agent, freshly isolated,** on `opus`. This is the run's one findings-producing dispatch, and [../defending-findings/DEFEND-PREAMBLE.md](../defending-findings/DEFEND-PREAMBLE.md) names `review` among the stages that inject it, so its prompt opens with that file inlined **verbatim** — a fresh sub-agent cannot resolve these relative paths. Then tell it to form its own picture from the tracker: the parent's body + all comments, and the acceptance criteria of every slice that landed. Its mandate is the integrated whole — build from a clean state in the worktree on the run branch, run the full suite, and judge the landed work against the parent's intent, returning PASS or a specific list of defects. Name the slices that never landed as out of scope, so their absent functionality reads as scope rather than as a defect. Keep the relay's transcript and the per-slice reports out of that prompt, so the picture stays independent.
+**One review sub-agent, freshly isolated,** on `opus` — dispatched once the relay stops dispatching, whether it ran the order out or a blocker ended it early. This is the run's one findings-producing dispatch, and [../defending-findings/DEFEND-PREAMBLE.md](../defending-findings/DEFEND-PREAMBLE.md) names `review` among the stages that inject it, so its prompt opens with that file inlined **verbatim** — a fresh sub-agent cannot resolve these relative paths. Then tell it to form its own picture from the tracker: the parent's body + all comments, and the acceptance criteria of every slice that landed. Its mandate is the integrated whole — build from a clean state in the worktree on the run branch, run the full suite, and judge the landed work against the parent's intent, returning PASS or a specific list of defects. Name the slices that never landed as out of scope, so their absent functionality reads as scope rather than as a defect. Keep the relay's transcript and the per-slice reports out of that prompt, so the picture stays independent.
 
 **Then the disposition is yours.** Relay the verdict and offer the choices: merge the run branch into the base branch, open a PR from it, remediate the findings, leave the worktree standing for later, or discard it. There is no automatic fix-and-regrade loop here — a `Workflow` runs one because no human is reachable inside it, and the relay has you right here (ADR 0003). The base branch changes only on your instruction; until then the relay's every commit sits on the run branch.
 
@@ -53,7 +54,7 @@ The relay asks you nothing once it starts; every ambiguity is resolved now.
 - Implementing a slice in this session "because it's small" — the relay's unit of work is a dispatch.
 - A slice entering the order without `state: ready-for-agent` — a decision reserved for a human doesn't become agent work because you can guess the answer.
 - Two slices in flight at once in the shared worktree. One writer at a time, always: concurrent sub-agents overwrite each other's working tree and the run's history stops being recoverable.
-- The relay continuing past a blocked slice. A top-rung failure ends the run; the remaining order goes to the user intact.
+- Dispatching another slice after one exhausted its rungs. A top-rung failure ends the dispatch loop: the remaining order goes to the user intact, and Stage 3 reviews what landed.
 
 ## Done when
 
@@ -66,6 +67,6 @@ The relay asks you nothing once it starts; every ambiguity is resolved now.
 - [ ] Exactly one worktree exists for this run, on the run branch, created by `git worktree add`.
 - [ ] The closed-slice reconcile ran before the first dispatch.
 - [ ] Every slice that landed was closed only after a clean build and a green full suite on the run branch.
-- [ ] Any slice that exhausted its rungs has a structured blocker on its issue, and the relay stopped there.
+- [ ] Any slice that exhausted its rungs has a structured blocker on its issue, and no slice below it in the order was dispatched.
 - [ ] The end-of-run review returned a verdict, and it was relayed.
 - [ ] The disposition was the user's choice, and the base branch is unchanged unless they chose to change it.
