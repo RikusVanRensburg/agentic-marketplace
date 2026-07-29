@@ -160,7 +160,9 @@ const DEV_SCHEMA = {
     branch: { type: 'string' },
     inProgressSet: { type: 'boolean', description: 'true once state: in-progress was applied' },
     committed: { type: 'boolean', description: 'true once the work is committed to the branch' },
-    summary: { type: 'string' }, newApis: { type: 'string' }, todos: { type: 'string' },
+    summary: { type: 'string' },
+    newApis: { type: 'string', description: 'new files or APIs downstream issues will touch' },
+    todos: { type: 'string', description: 'out-of-scope TODOs deferred to their own issues' },
   },
   required: ['branch', 'committed', 'summary'],
 }
