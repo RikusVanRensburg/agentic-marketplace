@@ -7,31 +7,31 @@ The **breakdown** exists; now drive **every** slice to committed-green on one **
 
 An interactive **pre-flight** in this session freezes the slice order, the run branch and the worktree path. The **relay** then passes the baton from one slice sub-agent to the next down that order until it is exhausted, and hands the integrated whole to one review and then to you.
 
-**Standing rule:** `rr-workshop:defending-findings` applies to **pre-flight** — every edge and every branch decision is defended before the relay starts. The relay's slice stages return a plain verdict plus defects: that cost belongs to the one-time graph decisions, not to a check that reruns per slice, per rung.
+**The standing rule on findings, the shared prerequisites, pre-flight's tree read, its edge rule, its
+grilling step and the shared checklist are common to both engines.** Read
+[../../docs/engine-preflight.md](../../docs/engine-preflight.md) before pre-flight begins —
+it is the single source of truth for every requirement this skill does not state below.
+
+Here the stages that skip the defense are the relay's **slice stages**.
 
 ## Prerequisites
 
-- **A breakdown EXISTS.** `gh api --paginate repos/{owner}/{repo}/issues/<PARENT>/sub_issues --jq '.[].number'` prints nothing ⇒ **stop** and point at `rr-workshop:to-issues`. This skill implements a tree; it creates no issues and edits no bodies, so a missing or wrong breakdown goes back there too.
-- **Every slice carries `state: ready-for-agent`.** First `gh label list --limit 200 --json name --jq '.[].name' | grep '^state:'` — empty output means the repo has no `state:` taxonomy, so nothing distinguishes a slice an agent may build from one reserved for a human: **stop** and get the user to confirm slice by slice. Otherwise read each slice's labels (`gh issue view <n> --json labels --jq '.labels[].name'`); any slice missing `ready-for-agent` ⇒ **stop** and surface it.
+Every prerequisite in [engine-preflight.md](../../docs/engine-preflight.md), plus:
 
-  This check *is* the HITL filter. `rr-workshop:to-issues` labels a slice needing a human `state: ready-for-human`, never `ready-for-agent` — so a HITL slice fails this check and never enters the order pre-flight builds.
 - **`git worktree` works here.** `git rev-parse --is-inside-work-tree` and `git worktree list` both succeed. The relay's whole isolation is the one worktree it creates; if either command fails, **stop** and say which.
-- **GitHub tracker.** Pre-flight reads the tree and the relay closes slices via `gh`: the "Sub-issues (parent/child tree)" and "Native blocking relationships" sections of [../../docs/github-operations.md](../../docs/github-operations.md).
 - **No `Workflow` tool needed.** The relay runs its loop from this session with plain `Agent` calls, so a reader arriving from `rr-workshop:orchestration` can drop that skill's research-preview prerequisite. That reach is this skill's reason to exist (ADR 0003), and its price is that the loop lives in your judgment rather than in a shipped script.
 
 ## Stage 1 — Pre-flight (interactive, in this session)
 
 The relay asks you nothing once it starts; every ambiguity is resolved now.
 
-1. **Read the whole tree.** The parent's body + **all** comments; enumerate every slice (`--paginate`) and read each body + **all** comments + acceptance criteria. Done when no slice remains unread.
-2. **Build the linear order.** Read the **native** dependency relationship first — `gh api repos/{owner}/{repo}/issues/<n>/dependencies/blocked_by --jq '.[].number'` — then cross-check it against the slice's `## Blocked by` prose, which carries the evidence that makes each edge real. Both channels agreeing is what promotes an edge into the graph. A disagreement between them, or a missing `## Blocked by` section, is a defect in the breakdown: resolve it with the user before starting. Edges come from these two channels only — never from the order slices are listed in, and never from issue numbers.
-
-   Then topologically sort the graph into a **total order**. One shared worktree admits exactly one writer, so each slice runs to completion before the next is dispatched — edges here fix the sequence, and there is no parallelism for them to unlock (ADR 0003). Done when every slice occupies exactly one position and every slice's blockers sit above it.
+1. **Read the whole tree** — [engine-preflight.md](../../docs/engine-preflight.md)'s "Reading the tree".
+2. **Build the linear order.** Promote every edge by `engine-preflight.md`'s "Promoting an edge", then topologically sort the graph into a **total order**. One shared worktree admits exactly one writer, so each slice runs to completion before the next is dispatched — edges here fix the sequence, and there is no parallelism for them to unlock (ADR 0003). Done when every slice occupies exactly one position and every slice's blockers sit above it.
 3. **Resolve the run branch and the worktree path.** The run branch follows the convention in `docs/agents/branches.md` when the repo has one, otherwise `sdd/<parent-slug>`; the worktree is a sibling of the repo root, `<repo-parent>/<repo-name>-sdd-<parent-slug>`. Also name the **base branch** the run branch forks from. The relay creates and names exactly one worktree, with `git worktree add` — leave the `Agent` tool's `isolation` unset so every slice lands in that one tree.
 
    Then enumerate the run's **disposable paths**: the gitignored directories a build regenerates from the tracked manifest — `node_modules`, `dist`, `target`, a build cache — which a failed attempt can leave stale. The list holds only what a build recreates; local configuration a slice reads — a gitignored `.env`, local settings, credentials — stays off it, because the relay restores nothing it deletes and no human is watching mid-run. An empty list is a valid answer. Done when the run branch, the base branch, the worktree path and the disposable-paths list are all written down.
 4. **Settle the model for each slice.** The rungs are `haiku → sonnet → opus → fable`, cheapest to smartest. Per slice, take the first that exists: a model the human assigns to that slice here, then a run-wide default the human gives here, then the base rung `sonnet`. Model choice is discovered by climbing, not predicted: no selector agent runs and no `model:` label is written (ADR 0001). Done when every slice in the order carries a starting rung.
-5. **Grill residual ambiguity to zero** via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requirements, doubtful edges, environment or credential needs — anything a dispatched agent would otherwise guess. Done when a full round surfaces no new question.
+5. **Grill residual ambiguity to zero** — `engine-preflight.md`'s "Grilling to zero".
 6. **Present the plan and get explicit launch approval.** Walk the total order slice by slice, with the run branch, the base branch, the worktree path, the disposable paths and each slice's starting rung. The user's approval message is the go/no-go for the relay.
 
 ## Stage 2 — Run the relay
@@ -63,19 +63,16 @@ The relay asks you nothing once it starts; every ambiguity is resolved now.
 
 ## Red flags — STOP
 
-- Implementing a slice in this session "because it's small" — the relay's unit of work is a dispatch.
-- A slice entering the order without `state: ready-for-agent` — a decision reserved for a human doesn't become agent work because you can guess the answer.
+The two shared flags in [../../docs/engine-preflight.md](../../docs/engine-preflight.md), plus:
+
 - Two slices in flight at once in the shared worktree. One writer at a time, always: concurrent sub-agents overwrite each other's working tree and the run's history stops being recoverable.
 - Dispatching another slice after one exhausted its rungs. A top-rung failure ends the dispatch loop: the remaining order goes to the user intact, and Stage 3 reviews what landed.
 
 ## Done when
 
-- [ ] Every slice's body, all its comments, and its acceptance criteria were read.
-- [ ] Every slice in the order carries `state: ready-for-agent`; no `ready-for-human` slice is in it.
-- [ ] Every edge is backed by both the native blocked-by relationship and its `## Blocked by` evidence, and every disagreement between the two was resolved with the user.
+Every box in [../../docs/engine-preflight.md](../../docs/engine-preflight.md)'s shared checklist — where the graph is the order it sorts into, and Stage 2's first act is the `git worktree add` — plus:
+
 - [ ] The order is total: every slice has exactly one position, and every slice's blockers sit above it.
-- [ ] Grilling reached zero open questions.
-- [ ] The explicit launch-approval message exists and predates the `git worktree add`.
 - [ ] Exactly one worktree exists for this run, on the run branch, created by `git worktree add`.
 - [ ] The closed-slice reconcile ran before the first dispatch.
 - [ ] Every slice that landed was closed only after a clean build and a green full suite on the run branch.
