@@ -14,15 +14,16 @@ See [tests.md](tests.md) for what separates a good test from a bad one, and [moc
 - **Standalone** — no issue. The user names the behavior to build, and you hand the result back to them.
 - **Issue-driven, attended** — you are the main-thread agent working a tracked issue (the AFK loop), and you own the slice end to end.
 - **Issue-driven, unattended** — you are the DEV sub-agent spawned by `rr-workshop:orchestration`. You are handed an issue number, a branch name, and a source branch, and you run in your own isolated worktree. Create that branch from the given source (`git checkout -b <branch> <source>`) inside your worktree, and do all git work there. Sub-agents are unavailable to you and there is no user to ask mid-run.
+- **Issue-driven, shared worktree** — you are the slice sub-agent dispatched by `rr-workshop:sdd-implement`. You are handed an issue number and a worktree that already sits on the run branch, with every earlier slice of this run already committed to it. Work where you stand: the branch exists, the worktree exists, and the engine verifies and closes the issue after you return. Sub-agents are unavailable to you and there is no user to ask mid-run.
 
-| | Standalone | Issue-driven, attended | Issue-driven, unattended |
-| --- | --- | --- | --- |
-| [Full-Context Load](context-loading.md) | n/a — no issue | required before the first test | required before the first test |
-| `state: in-progress` | n/a | set it (step 0) | set it (step 0), and report `inProgressSet` |
-| Interface contract | ask the user, get approval | ask the user, get approval | the acceptance criteria + parent issue **are** the approved contract — derive and proceed |
-| Branch | current branch | `docs/agents/branches.md` convention | `git checkout -b <branch> <source>`, in your worktree |
-| QA gate (step 4) | n/a — the user reviews | spawn an independent QA sub-agent | the orchestrator runs an independent QA stage after you return — finish green and return |
-| Merge and close | n/a | you merge, then you close | the orchestrator's integrate stage merges and, on a verified merge, closes the issue |
+| | Standalone | Issue-driven, attended | Issue-driven, unattended | Issue-driven, shared worktree |
+| --- | --- | --- | --- | --- |
+| [Full-Context Load](context-loading.md) | n/a — no issue | required before the first test | required before the first test | required before the first test |
+| `state: in-progress` | n/a | set it (step 0) | set it (step 0), and report `inProgressSet` | set it (step 0), and report `inProgressSet` |
+| Interface contract | ask the user, get approval | ask the user, get approval | the acceptance criteria + parent issue **are** the approved contract — derive and proceed | the acceptance criteria + parent issue **are** the approved contract — derive and proceed |
+| Branch | current branch | `docs/agents/branches.md` convention | `git checkout -b <branch> <source>`, in your worktree | already checked out — the run branch in the engine's worktree |
+| QA gate (step 4) | n/a — the user reviews | spawn an independent QA sub-agent | the orchestrator runs an independent QA stage after you return — finish green and return | one run-level review runs after every slice lands — finish green and return |
+| Merge and close | n/a | you merge, then you close | the orchestrator's integrate stage merges and, on a verified merge, closes the issue | the engine verifies the suite on the run branch and closes the issue |
 
 ## Repo configuration
 
@@ -102,6 +103,7 @@ With the loop green and the full suite passing, hand the work to an **independen
 3. **Log to the issue** (attended issue-driven runs — unattended runs report upward instead, and the integrate stage writes to the tracker) with `gh issue comment <N> --body "..."` when the implementation surfaced something the issue's author would want to know — not a play-by-play. Three triggers: a **non-trivial decision** the issue or PRD didn't direct; a **deviation** from the agent brief or acceptance criteria, and why; a **discovered follow-up** that is out of scope for this slice, so it can become its own issue.
 4. Finish per your mode:
    - **Unattended** — return the branch name, `inProgressSet`, `committed`, a 1-3 sentence summary, any new files or APIs downstream issues will touch, and any out-of-scope TODOs. Leave the merge, the tracker comment, and the close to the integrate stage.
+   - **Shared worktree** — commit to the run branch you are already on and return the same report as the unattended mode: `inProgressSet`, `committed`, a 1-3 sentence summary, any new files or APIs later slices will touch, and any out-of-scope TODOs. The engine verifies the suite and closes the issue.
    - **Attended, integrating directly** — an issue is done when its work is **merged**, not when QA goes green. Merge to the source branch, then close: `gh issue close <N> --reason completed --comment "<one-line summary>"` (`--reason` accepts only `completed` or `not planned`). Closing a sub-issue rolls up to the parent automatically, so the parent body needs no edit.
    - **Attended, leaving the work on a feature branch for review** — print `Closes #N` for each issue worked (aggregated if several) and let the merged PR close them. The developer pushes and opens the PR themselves (`gh pr create`); they decide the PR bundling.
    - **Standalone** — hand back what you built and the tests that cover it.
