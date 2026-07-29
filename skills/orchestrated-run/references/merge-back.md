@@ -68,3 +68,10 @@ Closing a child never auto-closes its parent, so each parent closes explicitly,
 
 Once fully merged, **ask** the user before `git branch -d <SOURCE>` — a deleted branch is easy to
 recover only while the reflog holds it, so deletion is theirs to call.
+
+**Only when the run kept its own worktree on SOURCE** — `git worktree list` shows a second worktree
+checked out on SOURCE, as a relay run's does and a `Workflow` run's never does — that worktree is
+part of the same ask, and its removal comes first: git refuses to delete a branch still checked out
+in another worktree. `git worktree remove <path>`, then `git branch -d <SOURCE>`. A removal that
+refuses on uncommitted changes is work the run never committed: show the user `git -C <path> status`
+and let them call it.

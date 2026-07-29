@@ -3,7 +3,7 @@
 This is the shared pipeline both routers read; each router owns its own row 5, row 6, and
 disposition beyond it.
 
-**The tree carries the state.** A run's only durable artifact is its GitHub issue tree: the map indexes the decisions, the spec issue is the spec, the slices are the plan, a closed slice is a verified merge onto SOURCE, and the final-review comment on the spec is the review trail. Nothing lands on disk — no ledger, no plan file, no review file — so any session, on any machine, re-derives where the run stands from the tree.
+**The tree carries the state.** A run's only durable artifact is its GitHub issue tree: the map indexes the decisions, the spec issue is the spec, the slices are the plan, a closed slice is its work verified green on the run's branch (each router's row 6 names the test its engine applies), and the final-review comment on the spec is the review trail. Nothing lands on disk — no ledger, no plan file, no review file — so any session, on any machine, re-derives where the run stands from the tree.
 
 ## The seed
 
@@ -30,9 +30,9 @@ Three human approvals gate the pipeline. **Gates are asserted, not re-implemente
 |---|---|---|---|
 | **Spec** | `to-spec` — `gh issue create` runs only after the approval message | the approval message; durably, the published spec issue itself, since to-spec publishes nothing unapproved | row 4 |
 | **Breakdown** | `to-issues` — `gh issue create` runs only after the approval message | the approval message; durably, the published slices themselves | row 5 |
-| **Launch** | `orchestration`'s pre-flight — the workflow launches only after the launch approval | the launch-approval message, in the session that launched the workflow | the Workflow call |
+| **Launch** | each engine's pre-flight — `orchestration` and `sdd-implement` both enter Stage 2 only after the launch approval | the launch-approval message, in the session that launched the engine | Stage 2's first act — the Workflow call, or the worktree creation |
 
-A spec or a breakdown that arrived by any other route has not passed its gate: get the user's explicit approval of it before advancing. (`to-spec` calls the spec gate *Gate 1*, `orchestration` calls the launch gate *Gate 2*, and `sdd-implement` calls its launch gate the same thing; those numbers skip the breakdown gate — the names above are the router's index.)
+A spec or a breakdown that arrived by any other route has not passed its gate: get the user's explicit approval of it before advancing. (`to-spec` calls the spec gate *Gate 1* and `orchestration` calls the launch gate *Gate 2*; those numbers skip the breakdown gate — the names above are the router's index.)
 
 ## Steps
 
@@ -47,7 +47,7 @@ Every invocation runs this loop.
 
 ## Standing discipline
 
-- **defending-findings, everywhere.** Every stage skill already carries the rule. This skill adds two duties: prepend the preamble in [../skills/defending-findings/DEFEND-PREAMBLE.md](../skills/defending-findings/DEFEND-PREAMBLE.md) **verbatim** into the prompt of any subagent dispatched directly from here (inline the text — subagents cannot resolve plugin paths), and refuse any stage output that asserts without defense — send it back through the defense before it enters the tree.
+- **defending-findings, everywhere.** Every stage skill already carries the rule — in its own text, or by reference to a shared file that states it. This skill adds two duties: prepend the preamble in [../skills/defending-findings/DEFEND-PREAMBLE.md](../skills/defending-findings/DEFEND-PREAMBLE.md) **verbatim** into the prompt of any subagent dispatched directly from here (inline the text — subagents cannot resolve plugin paths), and refuse any stage output that asserts without defense — send it back through the defense before it enters the tree.
 
 ## Red flags — STOP
 

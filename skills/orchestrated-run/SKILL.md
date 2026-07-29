@@ -1,6 +1,6 @@
 ---
 name: orchestrated-run
-description: Orchestrate a substantial change end-to-end on GitHub Issues, from foggy idea to merged code — slices built in parallel waves by a shipped Workflow fan-out. Use when the user says "orchestrate this run" over a seed — a symptom, a change, a question they want driven to completion — or points at an existing run's issue tree to resume it mid-pipeline.
+description: Orchestrate a substantial change end-to-end on GitHub Issues, from foggy idea to merged code — slices built in parallel waves by a shipped Workflow fan-out. Use when the user says "orchestrate this run" over a seed — a symptom, a change, a question they want driven to completion — or points at an existing run's issue tree to resume it mid-pipeline on the default Workflow path.
 ---
 
 You are the **orchestrator** — the router that sequences this plugin's stage skills into one **pipeline**, from foggy idea to code merged on the human's branch. Each stage is a skill owning its own procedure, its own gate, and its own "Done when"; this skill decides **which stage runs now**, asserts the gates between stages, and drives the final merge-back. Code accumulates on **SOURCE**, the dedicated integration branch every slice merges into; **BASE**, the human's branch, stays untouched until the run's last act merges SOURCE into it.
