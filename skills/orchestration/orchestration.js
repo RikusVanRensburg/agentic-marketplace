@@ -200,14 +200,15 @@ function devPrompt(n, priorDefects) {
   const ans = blockerAnswers[n] ? `\nResolved clarification from the human: ${blockerAnswers[n]}` : ''
   const redo = priorDefects ? `\n\nPrevious QA REJECTED with: ${JSON.stringify(priorDefects)} - fix exactly these.` : ''
   return [
-    `Implement issue #${n} ("${GRAPH[n].title}"), a sub-issue of ${PARENT}. You run in your OWN isolated git worktree, so you cannot collide with other DEV agents.`,
+    `Implement issue #${n} ("${GRAPH[n].title}"), a sub-issue of ${PARENT}. You work alone, in your OWN isolated git worktree.`,
     `Invoke rr-workshop:build-with-tdd for issue #${n} - its "issue-driven, unattended" mode. It owns the Full-Context Load, the state:in-progress flip, and the red-green-refactor loop.`,
-    `BRANCH BASE IS NON-NEGOTIABLE: create the branch FROM '${SOURCE}' (git checkout -b ${GRAPH[n].branch} ${SOURCE}) - never from main or whatever HEAD you find; '${SOURCE}' already contains every integrated upstream slice you build on. Perform ALL git operations inside your assigned worktree directory - never cd into another clone or worktree of this repo.`,
-    `The acceptance criteria + parent spec ARE the approved interface contract - do NOT wait for any user approval; this is an unattended orchestrated run. Do NOT spawn any QA sub-agent - you cannot spawn sub-agents; an independent QA stage runs after you return.`,
+    `Fork your branch from '${SOURCE}': git checkout -b ${GRAPH[n].branch} ${SOURCE}. '${SOURCE}' is the branch that already carries every integrated upstream slice you build on, which is what makes it the correct base. Keep every git command inside your assigned worktree directory - it is the one clone you have.`,
+    `The acceptance criteria + parent spec ARE the approved interface contract: derive the interface from them and proceed. This run is unattended, so your own judgment is the last word on anything they leave open.`,
+    `Do this slice's work yourself, here in this worktree. An independent QA stage judges it after you return, so your job ends at green.`,
+    `Deliver exactly the slice its acceptance criteria describe. Where you spot work beyond them, record it as a TODO for its own issue and move on.`,
     note ? `Upstream handoff (dependencies already integrated):\n${note}` : '',
     ans,
-    `When green and the full suite passes, COMMIT your work to branch '${GRAPH[n].branch}' with a conventional-commit message and NO Claude/Anthropic/Co-Authored-By attribution. Do NOT merge into ${SOURCE} - integration is a separate serialized stage.`,
-    `Return: the branch name, inProgressSet (did you set state: in-progress?), committed (did you commit?), a 1-3 sentence summary, any new files/APIs downstream issues will touch, and any out-of-scope TODOs.`,
+    `When the loop is green and the full suite passes, commit to branch '${GRAPH[n].branch}' with a conventional-commit message, in your own words only - no Co-Authored-By, no Claude or Anthropic attribution. Your branch is the deliverable; a separate serialized stage integrates it into '${SOURCE}'.`,
     redo,
   ].filter(Boolean).join('\n')
 }
@@ -237,8 +238,11 @@ async function buildIssue(n) {
     // model: the ladder rung for this round - QA rejections climb it (reactive escalation, not predictive).
     const dev = await agent(devPrompt(n, priorDefects), { label: `dev:#${n}:r${round}:${rungLabel}`, phase: 'Build', schema: DEV_SCHEMA, isolation: 'worktree', model: rung.model, effort: rung.effort })
     if (!dev) {
-      if (!infraRetried) { infraRetried = true; round--; continue } // retry the SAME rung - don't burn a rung on infrastructure
-      status[n] = 'blocked'; blockers.push({ issue: n, reason: 'dev agent unavailable (infrastructure, after same-rung retry)', rounds }); return null
+      // null = the agent never returned a verdict: infrastructure, OR a safety refusal on this slice's
+      // content (current models decline cyber/bio-adjacent work with no error). Same handling either way -
+      // one same-rung retry, then a blocker - but the post-run grilling needs to consider both causes.
+      if (!infraRetried) { infraRetried = true; round--; continue }
+      status[n] = 'blocked'; blockers.push({ issue: n, reason: 'dev agent returned no result - infrastructure or refusal (after same-rung retry)', rounds }); return null
     }
     if (!dev.committed) {
       // A cheap dev failing to deliver a commit is a capability outcome, not an error - it climbs the ladder like a QA rejection.
@@ -250,8 +254,11 @@ async function buildIssue(n) {
     // output-light so the smart model is cheap here. The opus final review backstops the integrated whole.
     const qa = await agent(qaPrompt(n, dev.branch), { label: `qa:#${n}:r${round}`, phase: 'Build', schema: QA_SCHEMA, model: 'opus', effort: 'high' })
     if (!qa) {
-      if (!infraRetried) { infraRetried = true; round--; continue } // a missing verdict must not escalate the ladder or trip the breaker
-      status[n] = 'blocked'; blockers.push({ issue: n, reason: 'QA agent unavailable (infrastructure, after same-rung retry)', rounds }); return null
+      // null = no verdict came back: infrastructure, OR a safety refusal on this slice's content (current
+      // models decline cyber/bio-adjacent work with no error). Either way a missing verdict must not escalate
+      // the ladder or trip the breaker - one same-rung retry, then a blocker naming both candidate causes.
+      if (!infraRetried) { infraRetried = true; round--; continue }
+      status[n] = 'blocked'; blockers.push({ issue: n, reason: 'QA agent returned no result - infrastructure or refusal (after same-rung retry)', rounds }); return null
     }
     rounds.push({ round, tier: rungLabel, devSummary: dev.summary, pass: qa.pass, defects: qa.defects || [] })
     if (qa.pass) return { issue: n, branch: dev.branch, dev }
@@ -323,15 +330,18 @@ const remediation = [] // per-round final-review fix records
 const unintegrated = nums().filter((n) => status[n] !== 'integrated' && !alreadyIntegrated.has(n))
 
 // The judge is reusable: the remediation loop needs a FRESH, isolated re-judgment after every fix - the fixer
-// never grades its own work. A null result is infrastructure, not a verdict: one same-judgment retry, then
-// 'unavailable' (which the caller MUST surface as a blocker - an ungraded state is never a clean run).
+// never grades its own work. A null result is never a verdict: it is infrastructure, OR a safety refusal on
+// the integrated content (current models decline cyber/bio-adjacent work with no error). Same handling either
+// way - one same-judgment retry, then 'unavailable', which the caller MUST surface as a blocker naming both
+// candidate causes, because an ungraded state is never a clean run.
 const runFinalReview = async (round) => {
   const prompt = [
     `Final review of ${PARENT} as integrated on branch '${SOURCE}'. Form your OWN picture from the source of truth - you know nothing about how the implementation went, and that is deliberate.`,
     `Read FRESH: the parent's body + ALL its comments, and every sub-issue's body + acceptance criteria.`,
     unintegrated.length ? `OUT OF SCOPE: sub-issues ${unintegrated.map((n) => `#${n}`).join(', ')} did NOT integrate in this run and are already escalated to a human. Judge ONLY the integrated work - do NOT emit findings about those issues' missing functionality.` : '',
     `Inspect '${SOURCE}' via a TEMPORARY detached worktree (git worktree add --detach <tmpdir> ${SOURCE}; remove it when done) - never switch an existing checkout's branch or cd into another clone of this repo. In it: build from a CLEAN state, run the FULL test suite, and review correctness, security, and edge cases - judging whether the integrated whole meets the parent's intent, especially interactions BETWEEN slices, which per-issue review structurally cannot see.`,
-    `Return pass:true ONLY if it builds, the suite is green, and the integrated work meets the parent's intent; otherwise pass:false with findings. Do NOT fix anything yourself - a separate remediation stage acts on your findings.`,
+    `Return pass:true ONLY if it builds, the suite is green, and the integrated work meets the parent's intent; otherwise pass:false with findings.`,
+    `Report findings only - a separate remediation stage acts on them.`,
     `Your OUTPUT is billed at a premium - be terse everywhere: no narration, no restating the spec, no praise, no code blocks, minimal intermediate notes. Each finding is ONE line: file:line (or module) - what is wrong - the expected behavior per the spec/criterion it violates - a fix pointer if obvious. That one line must let a cheaper remediation agent fix it WITHOUT re-investigating. Terse never means lenient or incomplete: report EVERY real defect - you are the gate that blocks bad code - and nothing that is not a defect.`,
   ].filter(Boolean).join('\n')
   // opus: the final gate runs opus at xhigh - the same tier as per-issue QA and integration, with deeper
@@ -386,7 +396,7 @@ if (anyIntegrated && !input.finalReviewDone) {
     blockers.push({ issue: 'FINAL', reason: `final review findings survived ${remediation.length} remediation round(s) - ladder exhausted`, findings: finalReview.findings })
   } else if (finalReview.status === 'unavailable') {
     const ungraded = remediation.map((r) => r.commitRef).filter(Boolean)
-    blockers.push({ issue: 'FINAL', reason: `final review verdict unavailable (infrastructure, after retry)${ungraded.length ? ` - remediation commit(s) ${ungraded.join(', ')} on '${SOURCE}' are UNGRADED` : ''}`, findings: lastFindings })
+    blockers.push({ issue: 'FINAL', reason: `final review returned no verdict - infrastructure or refusal (after retry)${ungraded.length ? ` - remediation commit(s) ${ungraded.join(', ')} on '${SOURCE}' are UNGRADED` : ''}`, findings: lastFindings })
   }
 }
 
