@@ -1,6 +1,6 @@
 ---
 name: sdd-run
-description: Subagent-driven run of a substantial change end-to-end on GitHub Issues, from foggy idea to code on one run branch — slices land serially in a single shared worktree, with no Workflow tool. Use when the user says "sdd-run" over a seed, wants a breakdown driven by a relay of subagents rather than a Workflow fan-out, or points at an existing sdd run's issue tree to resume it mid-pipeline.
+description: Subagent-driven run of a substantial change end-to-end on GitHub Issues, from foggy idea to code on one run branch — slices land serially in a single shared worktree, with no Workflow tool. Use when the user says "sdd-run" over a seed, wants a breakdown driven by a relay of subagents rather than a Workflow fan-out, or wants an existing run's issue tree resumed by a relay of subagents rather than a Workflow fan-out.
 ---
 
 You are the **relay's router** — the skill that sequences this plugin's stage skills into one **pipeline**, from foggy idea to code committed on the **run branch**: the one branch every slice of this run commits to, and the branch the relay's shared worktree sits on. This skill decides **which stage runs now**, asserts the gates between stages, and drives the merge back into the **base branch** the run branch forked from — which stays as it was until the human chooses that merge.
