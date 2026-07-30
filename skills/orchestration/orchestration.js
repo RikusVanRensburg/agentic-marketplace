@@ -1,7 +1,7 @@
 export const meta = {
   name: 'orchestration',
   description: 'Implement every sub-issue of a GitHub breakdown: dependency-ordered dev (rr-workshop:build-with-tdd, escalating model+effort ladder (default in the script\'s LADDER const)) -> independent QA (opus) -> serialized verified git merge into a dedicated integration branch (opus), then a final integrated review (opus, terse verdicts) with ladder-bounded remediation - circuit breaker and structured blockers throughout',
-  whenToUse: 'Launched by rr-workshop:orchestration after its interactive pre-flight (Gate 2). Static script - never edited per run (ADR 0002); all per-run data arrives via args: { parent, source, graph, ladder?, integrated?, answers?, finalReviewDone? }.',
+  whenToUse: 'Launched by rr-workshop:orchestration after its interactive pre-flight (the Launch gate). Static script - never edited per run (ADR 0002); all per-run data arrives via args: { parent, source, graph, ladder?, integrated?, answers?, finalReviewDone? }.',
   phases: [
     { title: 'Build', detail: 'dev (rr-workshop:build-with-tdd, worktree-isolated, ladder model) + independent QA (opus) per issue' },
     { title: 'Integrate', detail: 'serialized git merge, post-merge verify, close - in dependency order', model: 'opus' },
@@ -326,7 +326,10 @@ while (ready().length) {
     } else {
       status[b.issue] = 'blocked'
       // tier: integration is pinned, so its own rung is the one that produced this - the ladder never applies here.
-      blockers.push({ issue: b.issue, reason: 'integration failed (conflict or post-merge verification)', tier: INTEGRATE_TIER, conflicts: (intg && intg.conflicts) || null, failureSummary: (intg && intg.failureSummary) || null })
+      // reason: two different cases. A returned ok:false IS the conflict / post-merge-verification outcome; a null
+      // result is no verdict at all - infrastructure, OR a safety refusal on this slice's content - and naming the
+      // conflict case there would send the post-run grilling after a cause that never applied.
+      blockers.push({ issue: b.issue, reason: intg ? 'integration failed (conflict or post-merge verification)' : 'integrate agent returned no result - infrastructure or refusal', tier: INTEGRATE_TIER, conflicts: (intg && intg.conflicts) || null, failureSummary: (intg && intg.failureSummary) || null })
       log(`BLOCKED #${b.issue} at integration - its dependents will not run`)
     }
   }
@@ -391,7 +394,7 @@ if (anyIntegrated && !input.finalReviewDone) {
     const rung = LADDER[round - 1]
     const rungLabel = `${rung.model}/${rung.effort}`
     const fix = await agent([
-      `Remediate final-review findings for ${PARENT} on branch '${SOURCE}'. The per-issue work is already merged and its issues are closed - the tracker is settled, so leave it as it stands and put all your work into the integrated code itself.`,
+      `Remediate final-review findings for ${PARENT} on branch '${SOURCE}'. The per-issue work is already merged and its issues are closed - put all your work into the integrated code itself, and do NOT reopen, close, or create issues on the tracker.`,
       `Findings to fix - exactly these, and they are the whole scope of this round. Anything else you notice belongs in your summary rather than the diff:\n${finalReview.findings.map((f, i) => `${i + 1}. ${f}`).join('\n')}`,
       blockerAnswers.FINAL ? `Resolved guidance from the human: ${blockerAnswers.FINAL}` : '',
       `Work in a TEMPORARY worktree of '${SOURCE}' (git worktree add <tmpdir> ${SOURCE}; remove it when done) - keep every git command inside that tmpdir; it is the one checkout you work in. If the add fails because '${SOURCE}' is checked out elsewhere, use a detached worktree (git worktree add --detach <tmpdir> ${SOURCE}), commit on its detached HEAD, then update the branch ref from inside it: git push . HEAD:refs/heads/${SOURCE}`,

@@ -87,7 +87,7 @@ Publish in the step-2 order (blockers first) so every `## Blocked by` references
 --parent PARENT_NUMBER --type <native-mapped-type> --blocked-by <n1,n2,...>
 ```
 
-**`state:` carries the HITL/AFK marking — that label is its whole wire out.** AFK ⇒ `ready-for-agent`; HITL ⇒ `ready-for-human`. Either engine's pre-flight halts on a slice reserved for a human, so a correctly labelled HITL slice surfaces to the human instead of being handed to a dispatched agent. Neither value is `needs-triage`: triage already happened — the human approved the spec (Gate 1) and this breakdown (step 3), and `needs-triage` would deadlock the pipeline. When the repo lacks the `state:`/`type:`/`scope:` taxonomy, create without the missing labels and tell the user — taxonomy labels are pre-seeded team vocabulary, never created here.
+**`state:` carries the HITL/AFK marking — that label is its whole wire out.** AFK ⇒ `ready-for-agent`; HITL ⇒ `ready-for-human`. Either engine's pre-flight halts on a slice reserved for a human, so a correctly labelled HITL slice surfaces to the human instead of being handed to a dispatched agent. Neither value is `needs-triage`: triage already happened — the human approved the spec at the **Spec** gate and this breakdown at step 3, and `needs-triage` would deadlock the pipeline. When the repo lacks the `state:`/`type:`/`scope:` taxonomy, create without the missing labels and tell the user — taxonomy labels are pre-seeded team vocabulary, never created here.
 
 `--type` is the native Issue Type, coarse-mapped from `<t>` per the "Native issue type" table in [github-operations.md](../../docs/github-operations.md). `--blocked-by` takes the issue numbers of every blocker in this slice's `## Blocked by`; publishing in dependency order is what guarantees they already exist. **No `--assignee`** — slices stay unassigned so "unassigned = unclaimed" stays true for anything surveying the tree before a run launches, whether a human or the frontier query in github-operations.md. Assignment happens at claim time.
 
@@ -119,7 +119,7 @@ The gate (step 3) and create-then-verify-each (step 4) are where this skill gets
 
 | Excuse | Reality |
 |---|---|
-| "The user approved the spec, so the breakdown is approved" | Gate 1 approved *what* to build. The breakdown is *how it is cut* — a separate artifact needing its own approval message. |
+| "The user approved the spec, so the breakdown is approved" | The Spec gate approved *what* to build. The breakdown is *how it is cut* — a separate artifact needing its own approval message. |
 | "The breakdown is obviously right; approval is a formality" | Then it costs one message. A wrong cut caught in the draft is an edit; caught after publishing it is twelve live issues to unpick. |
 | "They said 'go ahead and file them'" — said before seeing the breakdown | That approves the intent, not the cut. Render the artifact, then ask. |
 | "I'll create them all and verify the links in one pass at the end" | The pass at the end is precisely what context pressure drops. Create one, verify one. |

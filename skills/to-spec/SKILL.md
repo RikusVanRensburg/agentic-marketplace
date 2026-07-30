@@ -50,11 +50,11 @@ Render the spec per [references/spec-template.md](references/spec-template.md), 
 - `docs/specs/<slug>.md` when the repo has a `docs/` directory
 - `<slug>.md` at the repo root otherwise
 
-(`<slug>` = kebab-case of the spec title.) Tell the user the path, and that the spec is **local only** — publishing waits for Gate 1.
+(`<slug>` = kebab-case of the spec title.) Tell the user the path, and that the spec is **local only** — publishing waits for the **Spec** gate.
 
-### 5. Iterate to explicit approval — Gate 1
+### 5. Iterate to explicit approval — the Spec gate
 
-Present the draft, apply the user's edits to the file, re-show. Loop until the user **explicitly approves**. That approval **is Gate 1 of the pipeline**: the human sign-off before anything downstream — slices, agents, code — can exist. `gh issue create` runs only after the approval message exists.
+Present the draft, apply the user's edits to the file, re-show. Loop until the user **explicitly approves**. That approval **is the pipeline's Spec gate**: the human sign-off before anything downstream — slices, agents, code — can exist. `gh issue create` runs only after the approval message exists.
 
 ### 6. Publish, link, verify, index
 
@@ -84,7 +84,7 @@ Present the draft, apply the user's edits to the file, re-show. Loop until the u
 - [ ] The user named the modules to test, and that list was echoed back before drafting.
 - [ ] Every proposed module carries a deletion-test verdict, and every new seam names two adapters.
 - [ ] Local draft file exists at the stated path.
-- [ ] The publish command ran only after an explicit approval message — Gate 1 passed.
+- [ ] The publish command ran only after an explicit approval message — the Spec gate passed.
 - [ ] The new issue URL was echoed to the user.
 - [ ] When a map exists: the spec is linked and verified as a sub-issue of the map, and the destination-reached entry sits in the map's Decisions so far.
 - [ ] Every Implementation Decision ships as a defended decision.

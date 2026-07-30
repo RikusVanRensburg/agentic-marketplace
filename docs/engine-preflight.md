@@ -13,11 +13,13 @@ they differ.
 Each engine adds its own; these hold for both.
 
 - **A breakdown EXISTS.** `gh api --paginate repos/{owner}/{repo}/issues/<PARENT>/sub_issues --jq '.[].number'` prints nothing ⇒ **stop** and point at `rr-workshop:to-issues`. An engine implements a tree; it creates no issues and edits no bodies, so a missing or wrong breakdown goes back there too.
-- **Every slice still open carries `state: ready-for-agent` or `state: in-progress`.** First `gh label list --limit 200 --json name --jq '.[].name' | grep '^state:'` — empty output means the repo has no `state:` taxonomy, so nothing distinguishes a slice an agent may build from one reserved for a human: **stop** and get the user to confirm slice by slice. Otherwise read each slice's state alongside its labels (`gh issue view <n> --json state,labels --jq '[.state] + [.labels[].name]'`) and check the labels of the slices that read OPEN. A CLOSED slice already landed, and each engine drops it in Stage 2 on its own closed-slice reconcile before any slice is dispatched, so its labels decide nothing here. An open slice carrying neither passing label ⇒ **stop** and surface it.
+- **Every slice still open carries `state: ready-for-agent` or `state: in-progress`.** First `gh label list --limit 200 --json name --jq '.[].name' | grep '^state:'` — empty output means the repo has no `state:` taxonomy, so nothing distinguishes a slice an agent may build from one reserved for a human: **stop** and get the user to confirm slice by slice. Otherwise read each slice's state alongside its labels (`gh issue view <n> --json state,labels --jq '[.state] + [.labels[].name]'`) and check the labels of the slices that read OPEN. Both engines read any CLOSED slice as landed — whether it merged, or was closed as not-planned or as a duplicate — and each drops it in Stage 2 on its own closed-slice reconcile before any slice is dispatched, so its labels decide nothing here. An open slice carrying neither passing label ⇒ **stop** and surface it.
 
   `state: in-progress` passes because it is the mark a prior dispatch left: `rr-workshop:build-with-tdd` swaps `ready-for-agent` for it when it claims a slice, and completion is recorded by the issue being CLOSED rather than by a label. So a relaunch reads `in-progress` on every open slice an earlier run already touched — including the blocked slice the relaunch exists to retry, which is what makes resume reachable at all.
 
-  This check *is* the HITL filter. `rr-workshop:to-issues` labels a slice needing a human `state: ready-for-human`, never `ready-for-agent`, and no dispatch ever claims it — so a HITL slice carries neither passing label, fails this check, and never enters the graph pre-flight builds.
+  This check *is* the HITL filter, and it rests on the labels alone: `rr-workshop:to-issues` marks a slice needing a human `state: ready-for-human` and never `ready-for-agent`, so an untouched HITL slice carries neither passing label, fails this check, and never enters the graph pre-flight builds.
+
+  Its one leak is a HITL slice a human legitimately started. A work-starter flips the slice's current `ready-*` value to `in-progress`, and `state:` holds exactly one value, so the `ready-for-human` mark is gone: the slice reads OPEN + `in-progress` and passes this check like any prior dispatch's. **The launch gate is where that is caught, not here** — each engine walks its whole order past the human there, so name every open `in-progress` slice as it goes by, as one an earlier dispatch is presumed to have touched. A slice the human claims as theirs comes out of the order.
 - **GitHub tracker.** Pre-flight reads the tree and the run closes slices via `gh`: the "Sub-issues (parent/child tree)" and "Native blocking relationships" sections of [github-operations.md](github-operations.md).
 
 ## Reading the tree
@@ -42,7 +44,7 @@ Grill via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requi
 ## Shared Done when
 
 - [ ] Every slice's body, all its comments, and its acceptance criteria were read.
-- [ ] Every open slice in the graph carries `state: ready-for-agent`, or `state: in-progress` from a prior dispatch; no `ready-for-human` slice is in it.
+- [ ] Every open slice in the graph carries `state: ready-for-agent`, or `state: in-progress` from a prior dispatch; every `in-progress` one was named to the human at the launch gate, and none came back as theirs.
 - [ ] Every edge is backed by both the native blocked-by relationship and its `## Blocked by` evidence, and every disagreement between the two was resolved with the user.
 - [ ] The user confirmed grilling's step-6 playback, and no branch in it read open.
 - [ ] The explicit launch-approval message exists and predates the first act of Stage 2.

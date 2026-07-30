@@ -1,8 +1,14 @@
 # DEFEND preamble
 
-The single source of truth for the preamble that every `rr-workshop` stage injects into the
-subagents it dispatches (investigation, design, planning, QA, review). Prepend it **verbatim** to
-the agent's prompt, then append the stage-specific body.
+The single source of truth for the preamble that an `rr-workshop` stage injects into the subagents
+it dispatches: each router's directly-dispatched subagents, `wayfinder`'s breadth reads, and
+`relay-implement`'s end-of-run review. Prepend it **verbatim** to the agent's prompt, then append
+the stage-specific body.
+
+`rr-workshop:orchestration`'s launched workflow is the exemption — it injects the preamble nowhere,
+including its own final review. Each engine names which of its own stages skip the defense, and
+every stage of that workflow is one: its prompts are fixed in a static, approval-gated script
+(ADR 0002) rather than composed per dispatch.
 
 It carries two independent parts: the **return protocol** every dispatched subagent needs, and the
 **defending-findings** discipline. Part 2's steps are a faithful compression of [SKILL.md](SKILL.md)'s
