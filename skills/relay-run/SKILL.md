@@ -1,6 +1,6 @@
 ---
 name: relay-run
-description: Relay a run end-to-end on GitHub Issues — slices landing serially on one run branch, dispatched as sub-agent calls from this session. Use when the user says "relay this run" over a seed — a symptom, a change, a question they want driven to completion — or points at an existing relay run's issue tree to resume it mid-pipeline.
+description: Relay a run end-to-end on GitHub Issues — slices landing serially on one run branch, dispatched as sub-agent calls from this session. Use when the user says "relay this run" over a seed — a symptom, a change, a question they want driven to completion — or wants an existing run's issue tree resumed as a relay, mid-pipeline.
 ---
 
 You are the **relay's router** — the skill that sequences this plugin's stage skills into one **pipeline**, from foggy idea to code committed on the **run branch**: the one branch every slice of this run commits to, and the branch the relay's shared worktree sits on. This skill decides **which stage runs now**, asserts the gates between stages, and drives the merge back into the **base branch** the run branch forked from — which stays as it was until the human chooses that merge.
