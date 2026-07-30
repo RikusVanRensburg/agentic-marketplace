@@ -32,7 +32,7 @@ Each engine states what it does with the graph next, and what a wrong edge costs
 
 ## Grilling to zero
 
-Grill via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requirements, doubtful edges, environment or credential needs — anything a dispatched agent would otherwise guess. Done when a full round surfaces no new question.
+Grill via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requirements, doubtful edges, environment or credential needs — anything a dispatched agent would otherwise guess. Done when grilling reaches its own bound: its step-6 playback listed every branch by name with the answer it resolved to — a list, not a summary — and the user confirmed *that* list. An engine launches unattended, so no branch may still read open in that playback; a branch the user left open is a branch a dispatched agent would guess at.
 
 ## Red flags — STOP
 
@@ -44,5 +44,5 @@ Grill via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requi
 - [ ] Every slice's body, all its comments, and its acceptance criteria were read.
 - [ ] Every open slice in the graph carries `state: ready-for-agent`, or `state: in-progress` from a prior dispatch; no `ready-for-human` slice is in it.
 - [ ] Every edge is backed by both the native blocked-by relationship and its `## Blocked by` evidence, and every disagreement between the two was resolved with the user.
-- [ ] Grilling reached zero open questions.
+- [ ] The user confirmed grilling's step-6 playback, and no branch in it read open.
 - [ ] The explicit launch-approval message exists and predates the first act of Stage 2.

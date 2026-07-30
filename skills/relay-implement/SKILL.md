@@ -29,10 +29,12 @@ The relay asks you nothing once it starts; every ambiguity is resolved now.
 2. **Build the linear order.** Promote every edge by `engine-preflight.md`'s "Promoting an edge", then topologically sort the graph into a **total order**. One shared worktree admits exactly one writer, so each slice runs to completion before the next is dispatched — edges here fix the sequence, and there is no parallelism for them to unlock (ADR 0003). Done when every slice occupies exactly one position and every slice's blockers sit above it.
 3. **Resolve the run branch and the worktree path.** The run branch follows the convention in `docs/agents/branches.md` when the repo has one, otherwise `sdd/<parent-slug>`; the worktree is a sibling of the repo root, `<repo-parent>/<repo-name>-sdd-<parent-slug>`. Also name the **base branch** the run branch forks from. The relay creates and names exactly one worktree, with `git worktree add` — leave the `Agent` tool's `isolation` unset so every slice lands in that one tree.
 
-   Then enumerate the run's **disposable paths**: the gitignored directories a build regenerates from the tracked manifest — `node_modules`, `dist`, `target`, a build cache — which a failed attempt can leave stale. The list holds only what a build recreates; local configuration a slice reads — a gitignored `.env`, local settings, credentials — stays off it, because the relay restores nothing it deletes and no human is watching mid-run. An empty list is a valid answer. Done when the run branch, the base branch, the worktree path and the disposable-paths list are all written down.
+   Then resolve the run's **build command** and **test command**, verbatim, from the repo's build manifest, its CI workflow or its contributing docs, and put both in front of the user with the rest of the frozen values. The test command runs the **full** suite; where no single command covers it, the frozen value is the ordered list of commands that together do. Stage 2's step 4 gates every close on these two commands and no human is reachable to disambiguate them there, so a command still described rather than resolved is a command each slice improvises differently.
+
+   Then partition every **ignore rule** in force. Enumerate them from every source — the repo's root and nested `.gitignore` files, `.git/info/exclude`, and the global excludes file (`git config --get core.excludesFile`) — and rule each one **disposable** or **kept**, with its reason. Disposable means a build regenerates it from the tracked manifest: `node_modules`, `dist`, `target`, a build cache. Kept means anything a build does not recreate — a gitignored `.env`, local settings, credentials — because the relay restores nothing it deletes and no human is watching mid-run. The run's **disposable paths** are the disposable side of that partition, and an empty disposable side is a valid answer; an unsurveyed one is not. Done when the run branch, the base branch, the worktree path, the build command and the test command are each written down, and every enumerated ignore rule sits on exactly one side of the partition with its reason.
 4. **Settle the model for each slice.** The rungs are `haiku → sonnet → opus → fable`, cheapest to smartest. Per slice, take the first that exists: a model the human assigns to that slice here, then a run-wide default the human gives here, then the base rung `sonnet`. Model choice is discovered by climbing, not predicted: no selector agent runs and no `model:` label is written (ADR 0001). Done when every slice in the order carries a starting rung.
 5. **Grill residual ambiguity to zero** — `engine-preflight.md`'s "Grilling to zero".
-6. **Present the plan and get explicit launch approval.** Walk the total order slice by slice, with the run branch, the base branch, the worktree path, the disposable paths and each slice's starting rung. The user's approval message is the go/no-go for the relay.
+6. **Present the plan and get explicit launch approval.** Walk the total order slice by slice, with the run branch, the base branch, the worktree path, the build command, the test command, the disposable paths and each slice's starting rung. The user's approval message is the go/no-go for the relay.
 
 ## Stage 2 — Run the relay
 
@@ -42,8 +44,11 @@ The relay asks you nothing once it starts; every ambiguity is resolved now.
    - The instruction to invoke `rr-workshop:build-with-tdd` and work it in its **`Issue-driven, shared worktree`** mode — that mode owns the loop, the branch handling and the report shape.
    - The absolute worktree path, plus the instruction that **every** command it runs — git, build, test — runs inside that path. A dispatched agent starts in this session's working directory, so tell it to move to the worktree first and to keep every command there.
    - The slice's issue number, the parent issue's URL, and the run branch name.
-4. **Verify, then close and re-mark.** In the worktree, build clean and run the **full** suite. Green ⇒ `gh issue close <n> --reason completed`, then move the **green mark** to what you just verified: `git -C <worktree-path> rev-parse HEAD`, written down in place of the previous mark. The baton passes to the next slice.
-5. **On red, climb one rung.** Return the worktree to the green mark first, so the failed attempt leaves nothing behind:
+   - The instruction to return, in that report, `committed` — and, when it is true, the SHA of the commit it left on the run branch.
+
+   Done when that report is in hand carrying `committed: true` and a SHA, and `git -C <worktree-path> rev-parse HEAD` prints that same SHA and it is not the green mark. Anything else — `committed: false`, a report with no SHA, or a HEAD still sitting at the green mark — is a **red round** and goes to step 5, exactly as a red suite does; step 4 does not run on it.
+4. **Verify, then close and re-mark.** In the worktree, run pre-flight's build command from a clean state, then pre-flight's test command. Both green ⇒ `gh issue close <n> --reason completed`, then move the **green mark** to what you just verified: `git -C <worktree-path> rev-parse HEAD`, written down in place of the previous mark. The baton passes to the next slice.
+5. **On red — a failing build, a failing suite, or a round that committed nothing — climb one rung.** Return the worktree to the green mark first, so the failed attempt leaves nothing behind:
 
    ```bash
    git -C <worktree-path> reset --hard <green-mark>   # rewinds every tracked file
@@ -73,9 +78,10 @@ The two shared flags in [../../docs/engine-preflight.md](../../docs/engine-prefl
 Every box in [../../docs/engine-preflight.md](../../docs/engine-preflight.md)'s shared checklist — where the graph is the order it sorts into, and Stage 2's first act is the `git worktree add` — plus:
 
 - [ ] The order is total: every slice has exactly one position, and every slice's blockers sit above it.
+- [ ] The run branch, the base branch, the worktree path, the build command and the test command are written down, and every ignore rule in force is ruled disposable or kept with its reason.
 - [ ] Exactly one worktree exists for this run, on the run branch, created by `git worktree add`.
 - [ ] The closed-slice reconcile ran before the first dispatch.
-- [ ] Every slice that landed was closed only after a clean build and a green full suite on the run branch.
+- [ ] Every slice that landed was closed only after its sub-agent reported `committed: true` with the SHA that the worktree's HEAD prints, and pre-flight's build command and test command both ran green there on the run branch.
 - [ ] Every retry started from the green mark, with the disposable paths cleared and no other ignored path touched.
 - [ ] Any slice that exhausted its rungs has a structured blocker on its issue, and no slice below it in the order was dispatched.
 - [ ] The end-of-run review returned a verdict, and it was relayed.
