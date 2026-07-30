@@ -1,6 +1,6 @@
 ---
-name: sdd-run
-description: Subagent-driven run of a substantial change end-to-end on GitHub Issues, from foggy idea to code on one run branch — slices land serially in a single shared worktree, with no Workflow tool. Use when the user says "sdd-run" over a seed, or wants a breakdown built — or an existing run's issue tree resumed — by a relay of subagents rather than a Workflow fan-out.
+name: relay-run
+description: Subagent-driven run of a substantial change end-to-end on GitHub Issues, from foggy idea to code on one run branch — slices land serially in a single shared worktree, with no Workflow tool. Use when the user says "relay-run" over a seed, or wants a breakdown built — or an existing run's issue tree resumed — by a relay of subagents rather than a Workflow fan-out.
 ---
 
 You are the **relay's router** — the skill that sequences this plugin's stage skills into one **pipeline**, from foggy idea to code committed on the **run branch**: the one branch every slice of this run commits to, and the branch the relay's shared worktree sits on. This skill decides **which stage runs now**, asserts the gates between stages, and drives the merge back into the **base branch** the run branch forked from — which stays as it was until the human chooses that merge.
@@ -15,12 +15,12 @@ it is the single source of truth for every row this skill does not define below.
 
 | # | Enter when | Stage |
 |---|---|---|
-| 5 | Spec has open slices | `rr-workshop:sdd-implement` — relaunching against the same run branch *is* the resume |
+| 5 | Spec has open slices | `rr-workshop:relay-implement` — relaunching against the same run branch *is* the resume |
 | 6 | Every slice under the spec reads CLOSED, the human chose merge at the relay's disposition step, and the run branch is not yet in the base branch | Merge back — [../orchestrated-run/references/merge-back.md](../orchestrated-run/references/merge-back.md) |
 
 Row 6 turns on three conditions. Check the **disposition** first: it is the condition this pipeline adds, and the one that reads as already satisfied once the other two hold.
 
-- **Disposition** — the human chose *merge* at the relay's disposition step (`rr-workshop:sdd-implement`, Stage 3), and you have their words for it. A run whose review passed and whose human chose to open a PR, remediate, or leave the worktree standing sits parked on that choice: report where it stands and start nothing. It reaches row 6 when they say merge, and only then.
+- **Disposition** — the human chose *merge* at the relay's disposition step (`rr-workshop:relay-implement`, Stage 3), and you have their words for it. A run whose review passed and whose human chose to open a PR, remediate, or leave the worktree standing sits parked on that choice: report where it stands and start nothing. It reaches row 6 when they say merge, and only then.
 - **Slice state** — `gh issue list`, or `gh issue view <n> --json state` per slice. Here CLOSED means *committed green on the run branch*: the relay closes a slice once it built clean with a green full suite there — a narrower claim than the Workflow path's verified merge onto an integration branch, and the run branch is the only branch this run touches. The state is the whole record; a landed slice carries no comment.
 - **Branch state** — `git merge-base --is-ancestor <run branch> <base branch>` exits **0** when the base branch already carries the run's commits. A **non-zero** exit is what puts the run on row 6.
 
@@ -42,7 +42,7 @@ Mechanics: [../orchestrated-run/references/merge-back.md](../orchestrated-run/re
 
 ## Standing discipline
 
-- **One review.** The run's single code review is the end-of-run review inside `rr-workshop:sdd-implement`'s Stage 3. Per-slice verification already gates every slice on a green suite, so this skill's work on a review is to relay its verdict and post its findings on the spec issue.
+- **One review.** The run's single code review is the end-of-run review inside `rr-workshop:relay-implement`'s Stage 3. Per-slice verification already gates every slice on a green suite, so this skill's work on a review is to relay its verdict and post its findings on the spec issue.
 
 ## Red flags — STOP
 

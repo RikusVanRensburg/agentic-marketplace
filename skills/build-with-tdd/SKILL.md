@@ -14,7 +14,7 @@ See [tests.md](tests.md) for what separates a good test from a bad one, and [moc
 - **Standalone** — no issue. The user names the behavior to build, and you hand the result back to them.
 - **Issue-driven, attended** — you are the main-thread agent working a tracked issue (the AFK loop), and you own the slice end to end.
 - **Issue-driven, unattended** — you are the DEV sub-agent spawned by `rr-workshop:orchestration`. You are handed an issue number, a branch name, and a source branch, and you run in your own isolated worktree. Create that branch from the given source (`git checkout -b <branch> <source>`) inside your worktree, and do all git work there. Sub-agents are unavailable to you and there is no user to ask mid-run.
-- **Issue-driven, shared worktree** — you are the slice sub-agent dispatched by `rr-workshop:sdd-implement`. You are handed an issue number and a worktree that already sits on the run branch, with every earlier slice of this run already committed to it. Work where you stand: the branch exists, the worktree exists, and the engine verifies and closes the issue after you return. Sub-agents are unavailable to you and there is no user to ask mid-run.
+- **Issue-driven, shared worktree** — you are the slice sub-agent dispatched by `rr-workshop:relay-implement`. You are handed an issue number and a worktree that already sits on the run branch, with every earlier slice of this run already committed to it. Work where you stand: the branch exists, the worktree exists, and the engine verifies and closes the issue after you return. Sub-agents are unavailable to you and there is no user to ask mid-run.
 
 | | Standalone | Issue-driven, attended | Issue-driven, unattended | Issue-driven, shared worktree |
 | --- | --- | --- | --- | --- |

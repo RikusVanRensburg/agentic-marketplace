@@ -1,10 +1,10 @@
 # Merge-back — SOURCE into BASE
 
-**On the relay path** — a run driven by `rr-workshop:sdd-run` — this file's vocabulary remaps and
+**On the relay path** — a run driven by `rr-workshop:relay-run` — this file's vocabulary remaps and
 four of its claims narrow:
 
 - **Vocabulary.** SOURCE is the **run branch**, BASE is the **base branch**, and a relaunch is
-  `rr-workshop:sdd-implement` against the same run branch.
+  `rr-workshop:relay-implement` against the same run branch.
 - **A second worktree is expected.** The relay's shared worktree stands on the run branch for the
   whole run, so the merge below runs alongside it rather than as a single-worktree operation — §6
   covers removing that worktree.
@@ -16,7 +16,7 @@ four of its claims narrow:
   report, so §1's `integrated` / `integrationOrder` fields and §5's "integration already closed
   it" both read as that close.
 - **The resume channel is Workflow-only.** §2's `answers` / `integrated` / `finalReviewDone` are
-  `orchestration.js`'s args contract. A relay resumes by relaunching `rr-workshop:sdd-implement`
+  `orchestration.js`'s args contract. A relay resumes by relaunching `rr-workshop:relay-implement`
   against the same run branch, which reconciles the landed slices itself.
 
 Row 6 of the pipeline. Interactive, in this session: BASE was never touched during the run, so

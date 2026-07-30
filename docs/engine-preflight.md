@@ -1,7 +1,7 @@
 # Engine pre-flight
 
 This is the shared pre-flight both implementation engines read — `rr-workshop:orchestration` and
-`rr-workshop:sdd-implement`; each engine owns the stages beyond it, and its own consequences where
+`rr-workshop:relay-implement`; each engine owns the stages beyond it, and its own consequences where
 they differ.
 
 ## The standing rule on findings

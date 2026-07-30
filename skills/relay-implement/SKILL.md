@@ -1,6 +1,6 @@
 ---
-name: sdd-implement
-description: Implement an existing GitHub-issue breakdown as a relay of subagents in one shared worktree — serial slices, one review at the end, no Workflow tool. Use when the user wants a breakdown built without the Workflow research preview, when a prior relay's blockers are resolved and it should resume, or when rr-workshop:sdd-run reaches its implementation stage.
+name: relay-implement
+description: Implement an existing GitHub-issue breakdown as a relay of subagents in one shared worktree — serial slices, one review at the end, no Workflow tool. Use when the user wants a breakdown built without the Workflow research preview, when a prior relay's blockers are resolved and it should resume, or when rr-workshop:relay-run reaches its implementation stage.
 ---
 
 The **breakdown** exists; now drive **every** slice to committed-green on one **run branch** — the single branch every slice of this run commits to, and the branch the shared worktree sits on.

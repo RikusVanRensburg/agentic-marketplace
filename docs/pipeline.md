@@ -30,7 +30,7 @@ Three human approvals gate the pipeline. **Gates are asserted, not re-implemente
 |---|---|---|---|
 | **Spec** | `to-spec` — `gh issue create` runs only after the approval message | the approval message; durably, the published spec issue itself, since to-spec publishes nothing unapproved | row 4 |
 | **Breakdown** | `to-issues` — `gh issue create` runs only after the approval message | the approval message; durably, the published slices themselves | row 5 |
-| **Launch** | each engine's pre-flight — `orchestration` and `sdd-implement` both enter Stage 2 only after the launch approval | the launch-approval message, in the session that launched the engine | Stage 2's first act — the Workflow call, or the worktree creation |
+| **Launch** | each engine's pre-flight — `orchestration` and `relay-implement` both enter Stage 2 only after the launch approval | the launch-approval message, in the session that launched the engine | Stage 2's first act — the Workflow call, or the worktree creation |
 
 A spec or a breakdown that arrived by any other route has not passed its gate: get the user's explicit approval of it before advancing. (`to-spec` calls the spec gate *Gate 1* and `orchestration` calls the launch gate *Gate 2*; those numbers skip the breakdown gate — the names above are the router's index.)
 
