@@ -30,7 +30,9 @@ Every ambiguity is resolved now.
    Then resolve the run's **build command** and **test command**, verbatim, from the repo's build manifest, its CI workflow or its contributing docs, and put both in front of the user with the rest of the frozen values. The test command runs the **full** suite; where no single command covers it, the frozen value is the ordered list of commands that together do. Stage 2's step 4 gates every close on these two commands, unattended, so a command still described rather than resolved is a command each slice improvises differently.
 
    Then partition every **ignore rule** in force. Enumerate them from every source — the repo's root and nested `.gitignore` files, `.git/info/exclude`, and the global excludes file (`git config --get core.excludesFile`) — and rule each one **disposable** or **kept**, with its reason. Disposable means a build regenerates it from the tracked manifest: `node_modules`, `dist`, `target`, a build cache. Kept means anything a build does not recreate — a gitignored `.env`, local settings, credentials — because the relay restores nothing it deletes. The run's **disposable paths** are the disposable side of that partition, and an empty disposable side is a valid answer; an unsurveyed one is not. Done when the run branch, the base branch, the worktree path, the build command and the test command are each written down, and every enumerated ignore rule sits on exactly one side of the partition with its reason.
-4. **Settle the model for each slice.** The rungs are `haiku → sonnet → opus → fable`, cheapest to smartest (ADR 0001). Per slice, take the first that exists: a model the human assigns to that slice here, then a run-wide default the human gives here, then the base rung `sonnet`. Done when every slice in the order carries a starting rung.
+4. **Settle the starting rung for each slice.** The rungs are `haiku → sonnet → opus → fable`, cheapest to smartest (ADR 0001). Per slice, take the first that exists: a model the human assigns to that slice here, then a run-wide default the human gives here, then the base rung `sonnet`.
+
+   Then raise it past what a prior run already spent — [engine-preflight.md](../../docs/engine-preflight.md)'s "Resuming a blocked slice" governs: read the newest blocker comment on every open slice, and start the slice above the rungs that comment records, or at the top rung for one attempt where it records a spent ladder. Done when every slice in the order carries a starting rung, and every slice whose issue carries a blocker comment sits above the rungs that comment names.
 5. **Grill residual ambiguity to zero** — [engine-preflight.md](../../docs/engine-preflight.md)'s "Grilling to zero".
 6. **Present the plan and get explicit launch approval.** Walk the total order slice by slice, with the run branch, the base branch, the worktree path, the build command, the test command, the disposable paths and each slice's starting rung. The user's approval message is the go/no-go for the relay.
 
@@ -76,6 +78,8 @@ Each pass takes the next slice in the order and carries it through steps 3–5; 
 
    Re-dispatch the same slice on the next rung up, fed the failures from the round before. At the top rung, write a structured blocker to the slice's issue — the slice, the rungs tried, and what failed at each. Unattended, that blocker is the only way this run asks a question, so write it to read complete to someone who saw none of the rounds, then carry it into Stage 3: this is the loop's second exit.
 
+   **Count the rungs tried from the slice's whole history, not this run's.** A slice that started above a prior run's rungs spent those too, and a blocker reporting only this run's rounds would let the next pre-flight restart lower than this one did — each resume undoing the last one's climb. So name the rungs this run tried, the rungs it started above, and the total.
+
 ## Stage 3 — Review and disposition
 
 **One review sub-agent, freshly isolated,** on `opus` — dispatched once Stage 2's loop exits. This is the run's one findings-producing dispatch, and its prompt carries all six of these:
@@ -110,7 +114,7 @@ Every box in [../../docs/engine-preflight.md](../../docs/engine-preflight.md)'s 
 - [ ] The closed-slice reconcile ran before the first dispatch, read each closure's reason, and sorted every closed slice into landed or descoped.
 - [ ] Every slice that landed was closed only after its sub-agent reported `committed: true` with the SHA that the worktree's HEAD prints, and pre-flight's build command and test command both ran green there on the run branch.
 - [ ] Every retry ran `reset --hard <green-mark>` then `clean -fd` before re-dispatching, plus `clean -fdx` scoped to the disposable paths whenever that list was non-empty.
-- [ ] Any slice that exhausted its rungs has a structured blocker on its issue, and no slice below it in the order was dispatched.
+- [ ] Any slice that exhausted its rungs has a structured blocker on its issue naming the total rungs spent on it across every run, and no slice below it in the order was dispatched.
 - [ ] Every slice in the order is accounted for on exactly one of five counts: closed this run, reconciled as already landed, reconciled as descoped, blocked with its blocker on its issue, or below the blocker and undispatched.
 - [ ] The end-of-run review returned a verdict, and it was relayed.
 - [ ] The disposition was the user's choice, and the base branch is unchanged unless they chose to change it.

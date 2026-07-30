@@ -1,7 +1,7 @@
 export const meta = {
   name: 'orchestration',
-  description: 'Implement every sub-issue of a GitHub breakdown: dependency-ordered dev (rr-workshop:build-with-tdd, escalating model+effort ladder (default in the script\'s LADDER const)) -> independent QA (opus) -> serialized verified git merge into a dedicated integration branch (opus), then a final integrated review (opus, terse verdicts) with ladder-bounded remediation - circuit breaker and structured blockers throughout',
-  whenToUse: 'Launched by rr-workshop:orchestration after its interactive pre-flight (the Launch gate). Static script - never edited per run (ADR 0002); all per-run data arrives via args: { parent, source, graph, ladder?, integrated?, answers?, finalReviewDone? }.',
+  description: 'Implement every sub-issue of a GitHub breakdown: dependency-ordered dev (rr-workshop:build-with-tdd, escalating model+effort ladder (default in the script\'s LADDER const)) -> independent QA (opus) -> serialized verified git merge into a dedicated integration branch (opus), then a final integrated review (opus, terse verdicts) with ladder-bounded remediation - circuit breaker throughout, and every blocker written to its issue on the tracker so a resume climbs above the rungs already spent',
+  whenToUse: 'Launched by rr-workshop:orchestration after its interactive pre-flight (the Launch gate). Static script - never edited per run (ADR 0002); all per-run data arrives via args: { parent, source, graph, ladder?, integrated?, answers?, rungsTried?, finalReviewDone? }.',
   phases: [
     { title: 'Build', detail: 'dev (rr-workshop:build-with-tdd, worktree-isolated, ladder model) + independent QA (opus) per issue' },
     { title: 'Integrate', detail: 'serialized git merge, post-merge verify, close - in dependency order', model: 'opus' },
@@ -34,6 +34,12 @@ export const meta = {
 //   integrated: [124],                              // optional resume: issue numbers merged in a prior run
 //   answers: { 125: 'use approach B',               // optional resume: human answers to prior blockers, by issue number;
 //              FINAL: 'guidance' },                 //   the literal key FINAL carries guidance for final-review remediation
+//   rungsTried: { 125: 2 },                         // optional resume: rungs a slice already exhausted, read off the
+//                                                   //   blocker comment this script leaves on the issue. That slice
+//                                                   //   restarts ABOVE them instead of re-burning the ladder from
+//                                                   //   rung 1. A count >= ladder length means the whole ladder is
+//                                                   //   spent: the slice retries the TOP rung once, on the strength
+//                                                   //   of the human's answers[] entry.
 //   finalReviewDone: true,                          // optional resume: a prior run already delivered the final review
 // }
 let input = args
@@ -106,6 +112,20 @@ if (input.answers !== undefined) {
     blockerAnswers[num] = v
   }
 }
+// Rung resume: how many rungs each slice already burned on a prior run. Validated as strictly as answers[] and
+// for the same reason - a silently dropped entry re-burns a full ladder of agents to re-reach a known dead end.
+const rungsTried = {}
+if (input.rungsTried !== undefined) {
+  if (!input.rungsTried || typeof input.rungsTried !== 'object' || Array.isArray(input.rungsTried)) {
+    throw new Error('orchestration: args.rungsTried must be an object of issueNumber -> count of rungs already exhausted')
+  }
+  for (const [k, v] of Object.entries(input.rungsTried)) {
+    const num = Number(k)
+    if (!GRAPH[num]) throw new Error(`orchestration: args.rungsTried key '${k}' is not an issue in the graph`)
+    if (!Number.isInteger(v) || v < 0) throw new Error(`orchestration: args.rungsTried[${k}] must be a non-negative integer`)
+    rungsTried[num] = v
+  }
+}
 // Escalation Ladder: round 1 runs the cheapest rung; each QA rejection climbs one; a rejection at the
 // top rung trips the breaker. Rounds = rungs, so overriding args.ladder changes rungs AND retry budget at once.
 // A rung is { model, effort }. Effort was previously never passed, so every stage ran the API default 'high';
@@ -150,6 +170,52 @@ const blockers = []  // structured escalation records
 const integrationOrder = [] // issues in the order they actually merged
 const commitRefs = {}       // issueNumber -> merge commit ref
 const todos = {}            // issueNumber -> deferred TODOs reported by DEV
+
+// Every blocker lands on the TRACKER as well as in this run's report. The report dies with the session, so a
+// blocker that lives only there is invisible to the next run and to the human: they cannot see which rungs the
+// slice already burned, and the relaunch re-burns them. This is also the channel args.rungsTried is read from,
+// and it is the artifact the relay engine already writes - both engines now leave the same record.
+// The comment is built HERE, in the script, so its shape is fixed rather than improvised per run; the agent's
+// only job is to put the given text on the given issue.
+const escalate = async (rec) => {
+  blockers.push(rec)
+  // rec.spent is CUMULATIVE across runs, so a resumed slice's comment reports every rung ever spent on it -
+  // rec.rounds only counts this run's, and reporting that would let each resume regress the count it just read.
+  const spent = typeof rec.spent === 'number' ? rec.spent : (rec.rounds ? rec.rounds.length : 0)
+  const target = rec.issue === 'FINAL' ? PARENT : String(rec.issue)
+  const body = [
+    '## Blocked by the orchestration run',
+    '',
+    `- **Reason:** ${rec.reason}`,
+    rec.tier ? `- **Rung it stopped on:** ${rec.tier}` : '',
+    `- **Rungs exhausted:** ${spent} of ${LADDER.length} (${LADDER.map((r) => `${r.model}/${r.effort}`).join(' -> ')})`,
+    `- **Integration branch:** ${SOURCE}`,
+    rec.conflicts && rec.conflicts.length ? `- **Conflicting paths:** ${rec.conflicts.join(', ')}` : '',
+    rec.failureSummary ? `- **Verification failure:** ${rec.failureSummary}` : '',
+    '',
+    rec.rounds && rec.rounds.length ? `### Rounds tried\n\n${rec.rounds.map((r) => `${r.round}. **${r.tier}** - ${r.outcome || (r.pass ? 'QA passed' : 'QA rejected')}${r.devSummary ? `: ${r.devSummary}` : ''}${r.defects && r.defects.length ? `\n   - defects: ${r.defects.join('; ')}` : ''}`).join('\n')}` : '',
+    '',
+    rec.lastDefects && rec.lastDefects.length ? `### Defects still open\n\n${rec.lastDefects.map((d) => `- ${d}`).join('\n')}` : '',
+    rec.findings && rec.findings.length ? `### Findings still open\n\n${rec.findings.map((f) => `- ${f}`).join('\n')}` : '',
+    '',
+    rec.issue === 'FINAL'
+      ? `To resume: relaunch with guidance in **args.answers.FINAL**. The remediation ladder is scoped to a run, so it starts again from its first rung.`
+      : `To resume: relaunch with this slice's answer in **args.answers** and **rungsTried: { ${rec.issue}: ${spent} }**, so the run restarts above the rungs already spent instead of re-burning them.`,
+  ].filter((line) => line !== '').join('\n')
+  // haiku/low: this posts given text to a given issue. It carries no judgment, so it gets the cheapest rung -
+  // and its failure must never fail the run, since the report still holds the blocker either way.
+  await agent(
+    [
+      `Post a comment on GitHub issue ${target} with EXACTLY the body below - do not reword, summarize, add, or drop anything.`,
+      `Write the body to a temporary file and post it with: gh issue comment ${target} --body-file <that file>. Then delete the file.`,
+      `Do NOT close, reopen, relabel, or otherwise modify the issue - a comment is the only change you make.`,
+      `--- BEGIN BODY ---`,
+      body,
+      `--- END BODY ---`,
+    ].join('\n'),
+    { label: `blocker-comment:${rec.issue}`, phase: 'Build', model: 'haiku', effort: 'low' }
+  )
+}
 
 const nums = () => Object.keys(GRAPH).map(Number)
 const depsMet = (n) => GRAPH[n].deps.every((d) => status[d] === 'integrated' || alreadyIntegrated.has(d))
@@ -246,7 +312,12 @@ async function buildIssue(n) {
   let priorDefects = null
   let infraRetried = false // one same-rung retry per issue for a null (skipped/failed) agent: infrastructure, not capability
   const rounds = []        // per-round escalation record, carried into any blocker for the post-run grilling
-  for (let round = 1; round <= LADDER.length; round++) {
+  // Rungs a prior run already exhausted are not re-run: re-burning them spends a full ladder of agents to arrive
+  // at the state the last run already reached. Capped one below the top so a slice whose whole ladder is spent
+  // still gets one attempt at the top rung - what changed since is the human's answers[] entry, not the rungs.
+  const burned = Math.min(rungsTried[n] || 0, LADDER.length - 1)
+  if (burned) log(`#${n}: resuming above ${burned} exhausted rung(s) - starting at ${LADDER[burned].model}/${LADDER[burned].effort}`)
+  for (let round = burned + 1; round <= LADDER.length; round++) {
     const rung = LADDER[round - 1]
     const rungLabel = `${rung.model}/${rung.effort}`
     // isolation:'worktree' gives each DEV its own working tree, so concurrent work-starter `git checkout -b` is safe.
@@ -259,7 +330,9 @@ async function buildIssue(n) {
       if (!infraRetried) { infraRetried = true; round--; continue }
       // tier: rounds[] is still empty on a round-1 null, so the rung must be named here or the blocker
       // carries no tier at all - and the grilling cannot tell a cheap-rung refusal from infrastructure.
-      status[n] = 'blocked'; blockers.push({ issue: n, reason: 'dev agent returned no result - infrastructure or refusal (after same-rung retry)', tier: rungLabel, rounds }); return null
+      // spent excludes THIS rung: no verdict came back, so the rung was never actually evaluated and a resume
+      // must retry it rather than climb past it. It counts the rungs a verdict did come back on.
+      status[n] = 'blocked'; await escalate({ issue: n, reason: 'dev agent returned no result - infrastructure or refusal (after same-rung retry)', tier: rungLabel, spent: burned + rounds.length, rounds }); return null
     }
     if (!dev.committed) {
       // A cheap dev failing to deliver a commit is a capability outcome, not an error - it climbs the ladder like a QA rejection.
@@ -276,14 +349,17 @@ async function buildIssue(n) {
       // the ladder or trip the breaker - one same-rung retry, then a blocker naming both candidate causes.
       if (!infraRetried) { infraRetried = true; round--; continue }
       // tier: as at the dev site - the round's dev rung, since QA itself is pinned.
-      status[n] = 'blocked'; blockers.push({ issue: n, reason: 'QA agent returned no result - infrastructure or refusal (after same-rung retry)', tier: rungLabel, rounds }); return null
+      // spent excludes THIS rung, as at the dev site - an ungraded rung is a rung still to try.
+      status[n] = 'blocked'; await escalate({ issue: n, reason: 'QA agent returned no result - infrastructure or refusal (after same-rung retry)', tier: rungLabel, spent: burned + rounds.length, rounds }); return null
     }
     rounds.push({ round, tier: rungLabel, devSummary: dev.summary, pass: qa.pass, defects: qa.defects || [] })
     if (qa.pass) return { issue: n, branch: dev.branch, dev }
     priorDefects = (qa.defects && qa.defects.length) ? qa.defects : ['QA rejected without listing defects - independently re-verify EVERY acceptance criterion and fix what fails']
   }
   status[n] = 'blocked'
-  blockers.push({ issue: n, reason: `circuit breaker tripped (ladder exhausted after ${LADDER.length} rounds)`, rounds, lastDefects: priorDefects })
+  // spent counts every rung ever spent on this slice, this run's rounds plus any a prior run burned - the number
+  // the human hands back as args.rungsTried. reason names both halves so a resumed blocker is not read as a fresh one.
+  await escalate({ issue: n, reason: `circuit breaker tripped (ladder exhausted: ${rounds.length} round(s) this run${burned ? `, resumed above ${burned} rung(s) a prior run burned` : ''})`, tier: `${LADDER[LADDER.length - 1].model}/${LADDER[LADDER.length - 1].effort}`, spent: LADDER.length, rounds, lastDefects: priorDefects })
   return null
 }
 
@@ -368,7 +444,9 @@ while (ready().length) {
       // reason: two different cases. A returned ok:false IS the conflict / post-merge-verification outcome; a null
       // result is no verdict at all - infrastructure, OR a safety refusal on this slice's content - and naming the
       // conflict case there would send the post-run grilling after a cause that never applied.
-      blockers.push({ issue: b.issue, reason: intg ? 'integration failed (conflict or post-merge verification)' : 'integrate agent returned no result - infrastructure or refusal', tier: INTEGRATE_TIER, conflicts: (intg && intg.conflicts) || null, failureSummary: (intg && intg.failureSummary) || null })
+      // spent: 0 - integration is pinned off the ladder, so a failure here exhausted no dev rung. The slice's dev
+      // work did land on its branch; what failed is the merge, and a resume re-derives that from the tracker.
+      await escalate({ issue: b.issue, reason: intg ? 'integration failed (conflict or post-merge verification)' : 'integrate agent returned no result - infrastructure or refusal', tier: INTEGRATE_TIER, spent: 0, conflicts: (intg && intg.conflicts) || null, failureSummary: (intg && intg.failureSummary) || null })
       log(`BLOCKED #${b.issue} at integration - its dependents will not run`)
     }
   }
@@ -447,7 +525,7 @@ if (anyIntegrated && !input.finalReviewDone) {
       if (!fixerInfraRetried) { fixerInfraRetried = true; round--; continue }
       // tier: as at the dev site - remediation[] is still empty on a round-1 null, so the rung must be named
       // here or the blocker carries no tier at all, and the grilling cannot tell a refusal from infrastructure.
-      blockers.push({ issue: 'FINAL', reason: 'remediation agent returned no result - infrastructure or refusal (after same-rung retry)', tier: rungLabel, findings: finalReview.findings })
+      await escalate({ issue: 'FINAL', reason: 'remediation agent returned no result - infrastructure or refusal (after same-rung retry)', tier: rungLabel, spent: remediation.length, findings: finalReview.findings })
       remediationAborted = true
       break
     }
@@ -464,11 +542,11 @@ if (anyIntegrated && !input.finalReviewDone) {
   if (!remediationAborted && finalReview.status === 'fail') {
     // tier: exhaustion means every rung ran, so the top rung is the one whose fix the findings survived.
     const topRung = LADDER[LADDER.length - 1]
-    blockers.push({ issue: 'FINAL', reason: `final review findings survived ${remediation.length} remediation round(s) - ladder exhausted`, tier: `${topRung.model}/${topRung.effort}`, findings: finalReview.findings })
+    await escalate({ issue: 'FINAL', reason: `final review findings survived ${remediation.length} remediation round(s) - ladder exhausted`, tier: `${topRung.model}/${topRung.effort}`, spent: remediation.length, findings: finalReview.findings })
   } else if (finalReview.status === 'unavailable') {
     const ungraded = remediation.map((r) => r.commitRef).filter(Boolean)
     // tier: the judge is pinned, so its own rung is the one that returned no verdict - never a ladder rung.
-    blockers.push({ issue: 'FINAL', reason: `final review returned no verdict - infrastructure or refusal (after retry)${ungraded.length ? ` - remediation commit(s) ${ungraded.join(', ')} on '${SOURCE}' are UNGRADED` : ''}`, tier: REVIEW_TIER, findings: lastFindings })
+    await escalate({ issue: 'FINAL', reason: `final review returned no verdict - infrastructure or refusal (after retry)${ungraded.length ? ` - remediation commit(s) ${ungraded.join(', ')} on '${SOURCE}' are UNGRADED` : ''}`, tier: REVIEW_TIER, spent: remediation.length, findings: lastFindings })
   }
 }
 

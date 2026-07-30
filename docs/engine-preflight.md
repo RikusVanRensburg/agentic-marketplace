@@ -49,6 +49,14 @@ Read the **native** dependency relationship first — `gh api repos/{owner}/{rep
 
 Each engine states what it does with the graph next, and what a wrong edge costs it there.
 
+## Resuming a blocked slice
+
+A slice that exhausted its rungs carries a **blocker comment on its own issue**. That comment is the run's only durable record of what the slice tried: a run report dies with its session, so a blocker kept only there is invisible to the next run and to the human. Both engines write one, and both read it back.
+
+**Read the newest blocker comment on every open slice before settling that slice's rung**, because the resume starts *above* the rungs it records. Re-running a rung that already failed spends an agent to re-reach a known dead end, and across a full ladder that is every agent the slice was going to get — the second run dies exactly where the first did, having learned nothing. A slice whose whole ladder is spent has nothing left to climb, so it retries the **top rung once**: what changed since is the human's answer to the blocker, not the rungs.
+
+Two slices legitimately start at the rung pre-flight assigns them: one with no blocker comment, and one whose blocker the human resolved by re-slicing the breakdown rather than answering the question — a re-sliced issue is new work, and its old rung history describes a slice that no longer exists.
+
 ## Grilling to zero
 
 Grill via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requirements, doubtful edges, environment or credential needs — anything a dispatched agent would otherwise guess. Done when grilling reaches its own bound: its step-6 playback listed every branch by name with the answer it resolved to — a list, not a summary — and the user confirmed *that* list. An engine launches unattended, so no branch may still read open in that playback; a branch the user left open is a branch a dispatched agent would guess at.
@@ -63,5 +71,6 @@ Grill via `rr-workshop:grilling`: unclear acceptance criteria, conflicting requi
 - [ ] Every slice's body, all its comments, and its acceptance criteria were read.
 - [ ] Every open slice in the graph carries `state: ready-for-agent`, or `state: in-progress` from a prior dispatch; every `in-progress` one was named to the human at the launch gate, and none came back as theirs.
 - [ ] Every edge is backed by both the native blocked-by relationship and its `## Blocked by` evidence, and every disagreement between the two was resolved with the user.
+- [ ] Every open slice's newest blocker comment was read, and every slice one names starts above the rungs it records — or at the top rung once, where it records a spent ladder.
 - [ ] The user confirmed grilling's step-6 playback, and no branch in it read open.
 - [ ] The explicit launch-approval message exists and predates the first act of Stage 2.

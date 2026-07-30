@@ -26,8 +26,9 @@ The workflow takes **no** human input once running; every ambiguity is resolved 
 1. **Read the whole tree** — [engine-preflight.md](../../docs/engine-preflight.md)'s "Reading the tree".
 2. **Build the frontier graph.** Promote every edge by `engine-preflight.md`'s "Promoting an edge". Get this right once: the script computes each wave's `ready()` in memory from exactly this graph and never re-reads dependency state from the tracker, so a wrong edge stays wrong for the whole run.
 3. **Pre-resolve branches + source.** For each slice compute a deterministic **slice branch** — the convention in `docs/agents/branches.md` when the repo has one, otherwise the script's own shape, `orch/<parent-slug>-task-<issue>-<title-slug>` — and settle the single `SOURCE` branch every slice branch forks from and integration merges into. These travel as `args.graph[<n>].branch` and `args.source`; DEV agents take them as givens and never prompt.
-4. **Grill residual ambiguity to zero** — `engine-preflight.md`'s "Grilling to zero".
-5. **Present the frontier and get explicit launch approval.** Walk the graph wave by wave — which slices start immediately, what each later wave waits on — with the resolved slice branches and SOURCE. The user's approval message is the go/no-go.
+4. **Collect the rungs prior runs already spent** — `engine-preflight.md`'s "Resuming a blocked slice". Read the newest blocker comment on every open slice; each one names the rungs spent on that slice, and each becomes an `args.rungsTried` entry so the script starts that slice above them instead of re-burning the ladder. No blocker comments ⇒ omit `rungsTried` entirely. Done when every open slice carrying a blocker comment has an entry.
+5. **Grill residual ambiguity to zero** — `engine-preflight.md`'s "Grilling to zero".
+6. **Present the frontier and get explicit launch approval.** Walk the graph wave by wave — which slices start immediately, what each later wave waits on — with the resolved slice branches, SOURCE, and the starting rung of every slice resuming above a prior run's. The user's approval message is the go/no-go.
 
 ## Stage 2 — Launch the shipped workflow
 
@@ -55,14 +56,14 @@ Each piece closes a gap that would otherwise rightly make an agent refuse to mer
 - **Independent QA** per slice — a fresh `opus` agent forms its own picture from the tree and never sees the dev's report.
 - **Verified merge** — integration builds and runs the full suite on SOURCE and resets on red. Only a verified merge closes the slice, `gh issue close --reason completed`.
 - **Dependency-ordered** — every slice branch forks from SOURCE (never stacked on a sibling), and merges land on SOURCE serially in dependency order.
-- **Escalation ladder + circuit breaker** — dev is the output-heavy stage, so it starts on the cheap rungs, where each rung is a model paired with a reasoning effort and a climb can deepen effort before it changes model tier (the default lives in the script's `LADDER` const — one place, so changing it is one edit) and each QA rejection climbs one; a rejection at the top rung halts only that slice's branch of the graph, with a structured **blocker**. The gates stay premium because verdicts are output-light: QA, the serialized integrator, and the final integrated review all run `opus`.
-- **Resume** — a relaunch is idempotent: the script's one live tracker read, a closed-issue reconcile, skips everything already landed before spending any agent.
+- **Escalation ladder + circuit breaker** — dev is the output-heavy stage, so it starts on the cheap rungs, where each rung is a model paired with a reasoning effort and a climb can deepen effort before it changes model tier (the default lives in the script's `LADDER` const — one place, so changing it is one edit) and each QA rejection climbs one; a rejection at the top rung halts only that slice's branch of the graph, with a structured **blocker** written to the slice's own issue as well as to the run report — the report dies with the session, so the issue is what a later run and the human can still read.
+- **Resume** — a relaunch is idempotent, and it does not repeat itself. One live tracker read reconciles closed slices before any agent is spent: those closed `completed` are skipped as landed, and those closed on any other reason are descoped, which halts the run if anything still to build depends on them. Slices carrying `args.rungsTried` restart above the rungs they already spent, so a resume climbs rather than re-burns.
 
 ## Post-run (back in this session)
 
 Read the final report and relay it. Then:
 
-- **Blockers.** Grill the user on each structured blocker via `rr-workshop:grilling`, then relaunch the same Workflow call with the **resume channel** filled in. Re-read the args contract in [orchestration.js](orchestration.js)'s header comment before composing it — the resume fields (already-merged slices, per-slice answers, final-review state) are defined there.
+- **Blockers.** Every blocker is already on its issue — the script put it there — so the report is a summary of what the tracker holds, not the only copy. Grill the user on each one via `rr-workshop:grilling`, then relaunch the same Workflow call with the **resume channel** filled in. Re-read the args contract in [orchestration.js](orchestration.js)'s header comment before composing it — the resume fields (already-merged slices, per-slice answers, rungs already spent, final-review state) are defined there.
 - **Resume is same-session only** for a live workflow: a dead session cannot resume it in place. Relaunching from a fresh session with the same args is the recovery — the reconcile makes it idempotent.
 
 ## Red flags — STOP
