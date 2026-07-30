@@ -30,9 +30,9 @@ Three human approvals gate the pipeline. **Gates are asserted, not re-implemente
 |---|---|---|---|
 | **Spec** | `to-spec` — `gh issue create` runs only after the approval message | the approval message; durably, the published spec issue itself, since to-spec publishes nothing unapproved | row 4 |
 | **Breakdown** | `to-issues` — `gh issue create` runs only after the approval message | the approval message; durably, the published slices themselves | row 5 |
-| **Launch** | each engine's pre-flight — `orchestration` and `relay-implement` both enter Stage 2 only after the launch approval | the launch-approval message, in the session that launched the engine | Stage 2's first act — the Workflow call, or the worktree creation |
+| **Launch** | each engine's pre-flight — `orchestration` and `relay-implement` both enter Stage 2 only after the launch approval | the launch-approval message, in the session that launched the engine | the engine's Stage 2 |
 
-A spec or a breakdown that arrived by any other route has not passed its gate: get the user's explicit approval of it before advancing. (`to-spec` calls the spec gate *Gate 1* and `orchestration` calls the launch gate *Gate 2*; those numbers skip the breakdown gate — the names above are the router's index.)
+A spec or a breakdown that arrived by any other route has not passed its gate: get the user's explicit approval of it before advancing.
 
 ## Steps
 
@@ -42,12 +42,12 @@ Every invocation runs this loop.
 2. **State the resolution with its evidence** — which issues exist, which are open or closed, and which row they match. Nothing else happens before this.
 3. **Assert the upstream gate.** Every gate the tree implies has been passed must have its evidence in hand before the stage that follows it runs.
 4. **Enter the stage.** Invoke its skill and let it own the procedure through its own "Done when".
-5. **Re-resolve** — back to step 1. One sitting may carry a run from row 3 through its pipeline's launch gate, or exactly one wayfinder ticket.
+5. **Re-resolve** — back to step 1. One sitting carries a run from row 3 through its pipeline's launch gate, or resolves exactly one wayfinder ticket and then hands off.
 6. **Hand off** when the session ends mid-pipeline: name the row the tree will match next, and where it runs — a successor session, or parallel sessions across the frontier.
 
 ## Standing discipline
 
-- **defending-findings, everywhere.** Every stage skill already carries the rule — in its own text, or by reference to a shared file that states it. This skill adds two duties: prepend the preamble in [../skills/defending-findings/DEFEND-PREAMBLE.md](../skills/defending-findings/DEFEND-PREAMBLE.md) **verbatim** into the prompt of any subagent dispatched directly from here (inline the text — subagents cannot resolve plugin paths), and refuse any stage output that asserts without defense — send it back through the defense before it enters the tree.
+- **defending-findings, everywhere.** This skill adds two duties: prepend the preamble in [../skills/defending-findings/DEFEND-PREAMBLE.md](../skills/defending-findings/DEFEND-PREAMBLE.md) **verbatim** into the prompt of any subagent dispatched directly from here (inline the text — subagents cannot resolve plugin paths), and refuse any stage output that asserts without defense — send it back through the defense before it enters the tree.
 
 ## Red flags — STOP
 

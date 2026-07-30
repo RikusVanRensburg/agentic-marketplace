@@ -27,7 +27,7 @@ The workflow takes **no** human input once running; every ambiguity is resolved 
 2. **Build the frontier graph.** Promote every edge by `engine-preflight.md`'s "Promoting an edge". Get this right once: the script computes each wave's `ready()` in memory from exactly this graph and never re-reads dependency state from the tracker, so a wrong edge stays wrong for the whole run.
 3. **Pre-resolve branches + source.** For each slice compute a deterministic **slice branch** — the convention in `docs/agents/branches.md` when the repo has one, otherwise the script's own shape, `orch/<parent-slug>-task-<issue>-<title-slug>` — and settle the single `SOURCE` branch every slice branch forks from and integration merges into. These travel as `args.graph[<n>].branch` and `args.source`; DEV agents take them as givens and never prompt.
 4. **Grill residual ambiguity to zero** — `engine-preflight.md`'s "Grilling to zero".
-5. **Present the frontier and get explicit launch approval (GATE 2).** Walk the graph wave by wave — which slices start immediately, what each later wave waits on — with the resolved slice branches and SOURCE. The user's approval message is the go/no-go.
+5. **Present the frontier and get explicit launch approval.** Walk the graph wave by wave — which slices start immediately, what each later wave waits on — with the resolved slice branches and SOURCE. The user's approval message is the go/no-go.
 
 ## Stage 2 — Launch the shipped workflow
 

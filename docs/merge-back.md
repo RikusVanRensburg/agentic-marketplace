@@ -43,7 +43,7 @@ Per structured blocker: grill the user via `rr-workshop:grilling` until it is re
 relaunch `rr-workshop:orchestration` with the resume channel — `answers` (issue number →
 clarification; the literal key `FINAL` carries final-review guidance), `integrated` (the
 already-merged issue numbers), `finalReviewDone` when a prior run delivered the verdict —
-targeting the **same SOURCE**: never recreate it, never reset it. When the relaunch returns,
+targeting the **same SOURCE**, reused exactly as the prior run left it. When the relaunch returns,
 start over at step 1 with the new report.
 
 ## 3. Merge — on the go-ahead
@@ -65,7 +65,7 @@ On the go-ahead, from BASE (already checked out — the run never moved it):
 1. `git merge --ff-only <SOURCE>` first — the common case, since BASE usually hasn't moved during
    the run.
 2. If BASE advanced and ff-only refuses: a normal `git merge <SOURCE>`, every conflict resolved
-   **with the user** — never force, never guess a resolution.
+   **with the user**, hunk by hunk, on their call.
 
 ## 4. Post the review trail on the spec
 
@@ -91,7 +91,8 @@ Once fully merged, **ask** the user before `git branch -d <SOURCE>` — a delete
 recover only while the reflog holds it, so deletion is theirs to call.
 
 **Only when the run kept its own worktree on SOURCE** — `git worktree list` shows a second worktree
-checked out on SOURCE, as a relay run's does and a `Workflow` run's never does — that worktree is
+checked out on SOURCE, as a relay run's does for the whole run, where a `Workflow` run's worktrees
+on SOURCE are temporary and removed by the stage that made them — that worktree is
 part of the same ask, and its removal comes first: git refuses to delete a branch still checked out
 in another worktree. `git worktree remove <path>`, then `git branch -d <SOURCE>`. A removal that
 refuses on uncommitted changes is work the run never committed: show the user `git -C <path> status`

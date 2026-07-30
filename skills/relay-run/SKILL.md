@@ -22,22 +22,22 @@ it is the single source of truth for every part of the pipeline not defined belo
 
 Row 6 turns on three conditions. Check the **disposition** first: it is the condition this pipeline adds, and the one that reads as already satisfied once the other two hold.
 
-- **Disposition** — the human chose *merge* at the relay's disposition step (`rr-workshop:relay-implement`, Stage 3), and you have their words for it. Every other choice on that menu parks the run: report where it stands and start nothing. It reaches row 6 when they say merge, and only then.
+- **Disposition** — the human chose *merge* at the relay's disposition step (`rr-workshop:relay-implement`, Stage 3), and you have their words for it. Every other choice on that menu parks the run: report where it stands and start nothing.
 - **Slice state** — `gh issue list`, or `gh issue view <n> --json state` per slice. Here CLOSED means *committed green on the run branch*: the relay closes a slice once it built clean with a green full suite there. The state is the whole record; a landed slice carries no comment.
 - **Branch state** — the `git merge-base --is-ancestor` test in [../../docs/merge-back.md](../../docs/merge-back.md), which also carries the verdict when it comes back finished.
 
-## Merging into BASE
+## Merging into the base branch
 
 The go-ahead discipline and the mechanics are shared: [../../docs/merge-back.md](../../docs/merge-back.md), written in the Workflow path's vocabulary — read its closing **On the relay path** section first, which remaps that vocabulary and narrows the claims that read differently here.
 
 ## Standing discipline
 
-- **One review.** The run's single code review is the end-of-run review inside `rr-workshop:relay-implement`'s Stage 3. Per-slice verification already gates every slice on a green suite, so this skill's work on a review is to relay its verdict and post its findings on the spec issue.
+- **One review.** The run's single code review is the end-of-run review inside `rr-workshop:relay-implement`'s Stage 3.
 
 ## Red flags — STOP
 
 - A merge into the base branch forming without the user's go-ahead for *this* merge — stop and ask for it in this session.
-- A `--force` or `reset --hard` reaching the base branch — stop. The base branch advances by a merge on a go-ahead, and by nothing else.
+- A `--force` or `reset --hard` reaching the base branch — stop.
 
 ## Done when
 
@@ -47,4 +47,4 @@ Every box in [../../docs/pipeline.md](../../docs/pipeline.md)'s shared checklist
 - [ ] Every slice under the spec reads CLOSED.
 - [ ] The spec, then the map when the run has one, closed with `gh issue close <n> --reason completed`.
 - [ ] The user was asked about removing the worktree and deleting the run branch, and both stand until they answer.
-- [ ] The end-of-run review's findings are posted as a comment on the spec issue.
+- [ ] The end-of-run review's verdict is posted as a comment on the spec issue, carrying its findings when it returned any.
