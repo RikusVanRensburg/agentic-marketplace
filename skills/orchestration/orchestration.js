@@ -187,21 +187,23 @@ const escalate = async (rec) => {
     '## Blocked by the orchestration run',
     '',
     `- **Reason:** ${rec.reason}`,
-    rec.tier ? `- **Rung it stopped on:** ${rec.tier}` : '',
+    rec.tier ? `- **Rung it stopped on:** ${rec.tier}` : null,
     `- **Rungs exhausted:** ${spent} of ${LADDER.length} (${LADDER.map((r) => `${r.model}/${r.effort}`).join(' -> ')})`,
     `- **Integration branch:** ${SOURCE}`,
-    rec.conflicts && rec.conflicts.length ? `- **Conflicting paths:** ${rec.conflicts.join(', ')}` : '',
-    rec.failureSummary ? `- **Verification failure:** ${rec.failureSummary}` : '',
+    rec.conflicts && rec.conflicts.length ? `- **Conflicting paths:** ${rec.conflicts.join(', ')}` : null,
+    rec.failureSummary ? `- **Verification failure:** ${rec.failureSummary}` : null,
     '',
-    rec.rounds && rec.rounds.length ? `### Rounds tried\n\n${rec.rounds.map((r) => `${r.round}. **${r.tier}** - ${r.outcome || (r.pass ? 'QA passed' : 'QA rejected')}${r.devSummary ? `: ${r.devSummary}` : ''}${r.defects && r.defects.length ? `\n   - defects: ${r.defects.join('; ')}` : ''}`).join('\n')}` : '',
+    rec.rounds && rec.rounds.length ? `### Rounds tried\n\n${rec.rounds.map((r) => `${r.round}. **${r.tier}** - ${r.outcome || (r.pass ? 'QA passed' : 'QA rejected')}${r.devSummary ? `: ${r.devSummary}` : ''}${r.defects && r.defects.length ? `\n   - defects: ${r.defects.join('; ')}` : ''}`).join('\n')}` : null,
     '',
-    rec.lastDefects && rec.lastDefects.length ? `### Defects still open\n\n${rec.lastDefects.map((d) => `- ${d}`).join('\n')}` : '',
-    rec.findings && rec.findings.length ? `### Findings still open\n\n${rec.findings.map((f) => `- ${f}`).join('\n')}` : '',
+    rec.lastDefects && rec.lastDefects.length ? `### Defects still open\n\n${rec.lastDefects.map((d) => `- ${d}`).join('\n')}` : null,
+    rec.findings && rec.findings.length ? `### Findings still open\n\n${rec.findings.map((f) => `- ${f}`).join('\n')}` : null,
     '',
     rec.issue === 'FINAL'
       ? `To resume: relaunch with guidance in **args.answers.FINAL**. The remediation ladder is scoped to a run, so it starts again from its first rung.`
       : `To resume: relaunch with this slice's answer in **args.answers** and **rungsTried: { ${rec.issue}: ${spent} }**, so the run restarts above the rungs already spent instead of re-burning them.`,
-  ].filter((line) => line !== '').join('\n')
+  // Absent fields are null and drop out; the '' entries are DELIBERATE blank lines and must survive, so filter on
+  // null rather than on falsiness. Runs of blanks left by a dropped section then collapse to one.
+  ].filter((line) => line !== null).join('\n').replace(/\n{3,}/g, '\n\n')
   // haiku/low: this posts given text to a given issue. It carries no judgment, so it gets the cheapest rung -
   // and its failure must never fail the run, since the report still holds the blocker either way.
   await agent(
