@@ -53,7 +53,7 @@ The script validates the contract and fails fast — malformed graph, cycle, dup
 
 Each piece closes a gap that would otherwise rightly make an agent refuse to merge unattended:
 
-- **Independent QA** per slice — a fresh `opus` agent forms its own picture from the tree and never sees the dev's report.
+- **Independent QA** per slice — a fresh `opus` agent forms its own picture from the tree and never sees the dev's report, on the plugin's shared mandate for verdict-producing dispatches ([../../docs/independent-judgment.md](../../docs/independent-judgment.md)); the script's `qaPrompt` and `runFinalReview` are that mandate's two shipped wordings.
 - **Verified merge** — integration builds and runs the full suite on SOURCE and resets on red. Only a verified merge closes the slice, `gh issue close --reason completed`.
 - **Dependency-ordered** — every slice branch forks from SOURCE (never stacked on a sibling), and merges land on SOURCE serially in dependency order.
 - **Escalation ladder + circuit breaker** — dev is the output-heavy stage, so it starts on the cheap rungs, where each rung is a model paired with a reasoning effort and a climb can deepen effort before it changes model tier (the default lives in the script's `LADDER` const — one place, so changing it is one edit) and each QA rejection climbs one; a rejection at the top rung halts only that slice's branch of the graph, with a structured **blocker** written to the slice's own issue as well as to the run report — the report dies with the session, so the issue is what a later run and the human can still read.

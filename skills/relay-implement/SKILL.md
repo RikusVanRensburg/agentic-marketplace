@@ -82,18 +82,13 @@ Each pass takes the next slice in the order and carries it through steps 3–5; 
 
 ## Stage 3 — Review and disposition
 
-**One review sub-agent, freshly isolated,** on `opus` — dispatched once Stage 2's loop exits. This is the run's one findings-producing dispatch, and its prompt carries all six of these:
+**One review sub-agent, freshly isolated,** on `opus` — dispatched once Stage 2's loop exits. This is the run's one findings-producing dispatch. A fresh sub-agent resolves none of the paths below, so each of these three is **inlined** into its prompt:
 
-- **The defense preamble, first and verbatim.** [../defending-findings/DEFEND-PREAMBLE.md](../defending-findings/DEFEND-PREAMBLE.md) names this review among the stages that inject it, so the prompt opens with that file inlined **verbatim** — a fresh sub-agent cannot resolve these relative paths.
-- **Its own picture, formed from the tracker:** the parent's body + all comments, and the acceptance criteria of every slice that landed.
-- **The absolute worktree path and the run branch**, as the one place its checks run.
-- **Its mandate — the integrated whole:** run pre-flight's build command from a clean state there, then pre-flight's test command, and judge the landed work against the parent's intent.
-- **The verdict shape:** PASS, or a specific list of defects.
-- **The slices that never landed, named as out of scope**, so their absent functionality reads as scope rather than as a defect.
+- **The defense preamble, first and verbatim.** [../defending-findings/DEFEND-PREAMBLE.md](../defending-findings/DEFEND-PREAMBLE.md) names this review among the stages that inject it, so the prompt opens with that file.
+- **The shared judgment mandate, at its integrated-whole scope** — [../../docs/independent-judgment.md](../../docs/independent-judgment.md). It is the single source of truth for what the review reads fresh from the tracker, what never reaches it, the verdict shape, and the slices that never landed being named as out of scope.
+- **This run's frozen values**, which the shared mandate leaves to each engine: the absolute worktree path and the run branch as the one place its checks run, and pre-flight's build command and test command as the checks themselves.
 
-The tracker and this prompt are the review's only inputs: the relay's transcript and the per-slice reports stay out, so its picture is independently formed.
-
-Done when a verdict is in hand, and the prompt that produced it carried all six items above and neither the relay's transcript nor a per-slice report.
+Done when a verdict is in hand, and the prompt that produced it carried all three items above and neither the relay's transcript nor a per-slice report.
 
 **Then the disposition is yours.** Relay the verdict and offer the choices: merge the run branch into the base branch, open a PR from it, remediate the findings — a fresh relay over new slices, or in-session fixes on the run branch, the user's choice — leave the worktree standing for later, or discard it. The base branch changes only on your instruction; until then the relay's every commit sits on the run branch.
 

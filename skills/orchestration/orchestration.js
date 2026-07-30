@@ -299,6 +299,11 @@ function devPrompt(n, priorDefects) {
 // adversarial self-attack ritual here - that discipline runs once, in pre-flight, over the graph/edges/branches;
 // re-running it per-issue on every rung is exactly the cost matching rr-workshop:build-with-tdd's cheaper QA
 // contract trims.
+// This prompt INSTANTIATES the plugin's shared judgment mandate (docs/independent-judgment.md) at its
+// single-slice scope: read fresh from the tracker, never see the dev's account, build clean, run the full suite,
+// check every criterion, return PASS or specific defects. A shipped script cannot dereference that file at
+// runtime - the sub-agent resolves no paths - so the rule lives there and this is its wording. Change one,
+// check the other; runFinalReview below instantiates the same mandate at its integrated-whole scope.
 function qaPrompt(n, branch) {
   return [
     `Independently QA issue #${n}, a sub-issue of ${PARENT}. Form your OWN picture from the source of truth: the tracker and the committed code are your only evidence, and you confirm every claim you meet there against the code yourself.`,

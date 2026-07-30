@@ -92,8 +92,8 @@ Refactor once the loop's list is exhausted and the suite is green — always on 
 With the loop green and the full suite passing, hand the work to an **independent QA sub-agent** for fresh-eyes verification rather than self-certifying.
 
 - Spawn ONE sub-agent of type **`general-purpose`** — it must be able to run the build and tests, which a read-only analyzer agent cannot.
-- Give it an **isolated, unbiased** prompt. A fresh sub-agent can't resolve this skill's relative paths, so **inline** the context mandate: tell it to read, fresh, the issue body + all comments + acceptance criteria, the parent issue + all comments, and the sibling sub-issues' acceptance criteria; pass the issue identifier, the parent reference, and a pointer to the branch/working tree. It must form its own picture from the source of truth — keep your own transcript, diff narration, and self-assessment out of that prompt.
-- Its mandate: build from a clean state, run the suite, and check **each acceptance criterion** against the parent's intent. Return PASS, or a specific list of defects.
+- Give it an **isolated, unbiased** prompt, built from [../../docs/independent-judgment.md](../../docs/independent-judgment.md) at its **single slice** scope — the shared mandate for every verdict-producing dispatch in this plugin, covering what the prompt carries, what it must never carry, and why. **Inline** it: a fresh sub-agent cannot resolve this skill's relative paths, so a prompt that cites one gives the QA agent nothing.
+- Pass the issue identifier, the parent reference, and a pointer to the branch/working tree; keep your own transcript, diff narration, and self-assessment out.
 - **On defects:** fix them (a fresh red → green per defect) and re-run QA, bounded to **3 rounds**. If QA still fails after the third round, stop and escalate to the user with the three rounds of findings.
 
 ## 5. Close out
