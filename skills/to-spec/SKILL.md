@@ -3,7 +3,7 @@ name: to-spec
 description: Use when the way is clear and the user wants the spec (PRD) written — "to spec", "write the PRD" — or when rr-workshop:orchestrated-run reaches its spec stage.
 ---
 
-The way is clear — the deciding is done. This skill **synthesizes** what was decided into a **spec** (you may know it as a PRD), published as a GitHub issue the rest of the pipeline builds from. Synthesis, not interviewing: wayfinder and grilling already asked the questions, and re-opening them now is this skill's defining failure. The user is consulted at exactly two points — the seam check (step 3) and the approval (step 5).
+The way is clear — the deciding is done. This skill **synthesizes** what was decided into a **spec** (you may know it as a PRD), published as a GitHub issue the rest of the pipeline builds from. Synthesis, not interviewing: wayfinder and grilling already asked the questions, and re-opening them now is this skill's defining failure. The user is consulted at exactly two points — the seam check (step 3) and the approval (step 6).
 
 **Standing rule:** every seam choice and Implementation Decision is a finding — `rr-workshop:defending-findings` applies throughout. Each ships as a **defended decision**, in the three parts [references/spec-template.md](references/spec-template.md) fixes.
 
@@ -52,11 +52,19 @@ Render the spec per [references/spec-template.md](references/spec-template.md), 
 
 (`<slug>` = kebab-case of the spec title.) Tell the user the path, and that the spec is **local only** — publishing waits for the **Spec** gate.
 
-### 5. Iterate to explicit approval — the Spec gate
+### 5. Sweep for the assertions this spec falsifies
+
+A spec that changes how something behaves usually makes some already-written sentence false, and those sentences are its real blast radius. Nobody finds them later by accident: they read as settled fact and get cited as settled fact, so the first to notice is whoever acts on one *after* the behaviour changed.
+
+For every behaviour this spec changes, search for two things: statements of the **old** behaviour, and unqualified statements of a rule this spec makes conditional. The second is the one that hides — a rule narrowed from "X means Y" to "X means Y only when Z" falsifies every restatement that skipped the condition, and those restatements are usually the confident one-liners in a glossary or an overview. Look in the ubiquitous-language and glossary files, the other specs, and the skills and docs that describe the same subject.
+
+Record each one in the spec's **Falsified Assertions** section with its file and its replacement, so `rr-workshop:to-issues` turns it into slice work: an unlisted falsified assertion is a contradiction shipped on purpose. Finding none is a real answer — record that, and where you looked.
+
+### 6. Iterate to explicit approval — the Spec gate
 
 Present the draft, apply the user's edits to the file, re-show. Loop until the user **explicitly approves**. That approval **is the pipeline's Spec gate**: the human sign-off before anything downstream — slices, agents, code — can exist. `gh issue create` runs only after the approval message exists.
 
-### 6. Publish, link, verify, index
+### 7. Publish, link, verify, index
 
 1. **Create** the issue from the approved draft:
 
@@ -90,3 +98,4 @@ Present the draft, apply the user's edits to the file, re-show. Loop until the u
 - [ ] Every Implementation Decision ships as a defended decision.
 - [ ] Testing Decisions names exactly the modules the user picked at the seam check.
 - [ ] The glossary reflects every term this spec introduced or sharpened.
+- [ ] Falsified Assertions names every statement this spec makes false, each with its file and its replacement — or records `None found` and where the sweep looked.

@@ -1,6 +1,6 @@
 ---
 name: orchestration
-description: Implement an existing GitHub-issue breakdown unattended — work the frontier of ready slices through to merged code. Use when the user wants an existing breakdown built AFK ("run the breakdown", "implement the issues"), when a prior run's blockers have been resolved and it should resume, or when rr-workshop:orchestrated-run reaches its implementation stage.
+description: Fan out an existing GitHub-issue breakdown across parallel waves, unattended — a shipped Workflow driving the frontier of ready slices through to merged code. Use when the user wants an existing breakdown built AFK ("run the breakdown", "implement the issues"), when a prior run's blockers have been resolved and it should resume, or when rr-workshop:orchestrated-run reaches its implementation stage.
 ---
 
 The **breakdown** exists; now drive **every** slice to merged, unattended.

@@ -1,7 +1,7 @@
 {
   "name": "rr-workshop",
-  "description": "RR's workshop: the orchestrated-run pipeline on GitHub Issues — wayfinding, spec, issues, implementation",
-  "version": "0.3.0",
+  "description": "RR's workshop: two run pipelines on GitHub Issues — wayfinding, spec, issues, then implementation by parallel Workflow fan-out or serial relay",
+  "version": "0.3.1",
   "author": {
     "name": "RR"
   },

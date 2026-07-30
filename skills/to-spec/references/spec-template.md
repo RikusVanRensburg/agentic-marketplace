@@ -75,6 +75,14 @@ parts:
 - **The seam each is tested at**, and why that seam.
 - Prior art — similar tests in the codebase.
 
+## Falsified Assertions
+
+Statements already written elsewhere that this spec makes false — one per line, each naming the
+file, what that statement currently claims, and what it has to say instead. These are edits the
+implementation owes, so `rr-workshop:to-issues` turns them into slice work rather than leaving
+them to be tripped over later. When the sweep came back empty, write `None found` and where you
+searched: an empty section and an unsearched one read identically.
+
 ## Out of Scope
 
 What is explicitly out of scope. When a wayfinder map exists, carry over its Out-of-scope

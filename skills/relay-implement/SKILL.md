@@ -1,6 +1,6 @@
 ---
 name: relay-implement
-description: Implement an existing GitHub-issue breakdown as a relay of sub-agents, unattended — serial slices in one shared worktree, the loop run from this session. Use when the user wants a breakdown relayed ("relay the breakdown", "relay these issues"), when a prior relay's blockers are resolved and it should resume, or when rr-workshop:relay-run reaches its implementation stage.
+description: Relay an existing GitHub-issue breakdown to committed code, unattended — serial slices landing in one shared worktree, the sub-agent loop run from this session. Use when the user wants a breakdown relayed ("relay the breakdown", "relay these issues"), when a prior relay's blockers are resolved and it should resume, or when rr-workshop:relay-run reaches its implementation stage.
 ---
 
 The **breakdown** exists; now drive the slice order to committed-green on one **run branch** — the single branch every slice of this run commits to, and the branch the shared worktree sits on. The run reaches as far down that order as the slices allow: to its end, or to the first slice that exhausts its rungs, where the dispatch loop stops and the slices below it stay undispatched for you.
