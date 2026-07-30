@@ -110,11 +110,13 @@ four of its claims narrowed:
 - **No per-slice independent QA gated the landed work.** A relay verifies each slice itself and
   first reaches independent `opus` judgement at the end-of-run review, so §1's fix-first /
   merge-as-is / hold choice rests on that one review alone.
-- **CLOSED means committed green on the run branch** — the relay's own close after a clean build
-  and a green full suite, a narrower claim than a verified merge onto an integration branch, and
-  the run branch is the only branch the run touches. There is no per-slice merge commit and no
-  final report, so §1's `integrated` / `integrationOrder` fields and §5's "Integration already
-  closed every slice it merged" both read as that close.
+- **Closed `completed` means committed green on the run branch** — the relay's own close after a
+  clean build and a green full suite, a narrower claim than a verified merge onto an integration
+  branch, and the run branch is the only branch the run touches. There is no per-slice merge commit
+  and no final report, so §1's `integrated` / `integrationOrder` fields and §5's "Integration
+  already closed every slice it merged" both read as that close. A slice closed on any other reason
+  was **descoped** rather than built, so it contributes nothing to merge — it satisfies the
+  all-slices-closed test without adding a line of code to the branch.
 - **The resume channel is Workflow-only.** §2's `answers` / `integrated` / `finalReviewDone` are
   `orchestration.js`'s args contract; the relay's relaunch carries none of them and reconciles the
   landed slices itself.

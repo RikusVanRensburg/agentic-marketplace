@@ -487,7 +487,7 @@ const runFinalReview = async (round) => {
   const prompt = [
     `Final review of ${PARENT} as integrated on branch '${SOURCE}'. Form your OWN picture from the source of truth - you know nothing about how the implementation went, and that is deliberate.`,
     `Read FRESH: the parent's body + ALL its comments, and every sub-issue's body + acceptance criteria.`,
-    unintegrated.length ? `IN SCOPE: the work that actually integrated on '${SOURCE}'. Sub-issues ${unintegrated.map((n) => `#${n}`).join(', ')} never integrated in this run and a human already holds them, so their functionality is absent by design - your findings cover the integrated slices only.` : '',
+    unintegrated.length ? `IN SCOPE: the work that actually integrated on '${SOURCE}'. Sub-issues ${unintegrated.map((n) => `#${n}`).join(', ')} did not integrate in this run - each is either blocked with a human holding it or descoped without ever being built - so their functionality is absent BY DESIGN and your findings cover the integrated slices only.` : '',
     `Inspect '${SOURCE}' via a TEMPORARY detached worktree (git worktree add --detach <tmpdir> ${SOURCE}; remove it when done) - keep every git command inside that tmpdir; it is the one checkout you work in. In it: build from a CLEAN state, run the FULL test suite, and review correctness, security, and edge cases - judging whether the integrated whole meets the parent's intent, especially interactions BETWEEN slices, which per-issue review structurally cannot see.`,
     `Return pass:true ONLY if it builds, the suite is green, and the integrated work meets the parent's intent; otherwise pass:false with findings.`,
     `Report findings only - a separate remediation stage acts on them.`,
