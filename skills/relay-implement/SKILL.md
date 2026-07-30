@@ -1,6 +1,6 @@
 ---
 name: relay-implement
-description: Implement an existing GitHub-issue breakdown as a relay of subagents in one shared worktree — serial slices, one review at the end, no Workflow tool. Use when the user wants a breakdown built without the Workflow research preview, when a prior relay's blockers are resolved and it should resume, or when rr-workshop:relay-run reaches its implementation stage.
+description: Implement an existing GitHub-issue breakdown as a relay of sub-agents, unattended — serial slices in one shared worktree, the loop run from this session. Use when the user wants a breakdown relayed ("relay the breakdown", "relay these issues"), when a prior relay's blockers are resolved and it should resume, or when rr-workshop:relay-run reaches its implementation stage.
 ---
 
 The **breakdown** exists; now drive the slice order to committed-green on one **run branch** — the single branch every slice of this run commits to, and the branch the shared worktree sits on. The run reaches as far down that order as the slices allow: to its end, or to the first slice that exhausts its rungs, where the dispatch loop stops and the slices below it stay undispatched for you.
@@ -38,6 +38,8 @@ The relay asks you nothing once it starts; every ambiguity is resolved now.
 
 ## Stage 2 — Run the relay
 
+**Unattended from here.** The launch approval was the last moment a human was reachable, so every ambiguity the run surfaces is yours to settle: decide it on the frozen values, write the decision down for Stage 3, and where two moves differ take the reversible one.
+
 ### Once, before the first dispatch
 
 1. **Create the worktree** on the run branch, forked from the base branch: `git worktree add -b <run-branch> <worktree-path> <base-branch>`. Resuming a run whose branch already exists, drop the `-b` and pass the run branch as the commit-ish. Done when `git -C <worktree-path> rev-parse --abbrev-ref HEAD` prints the run branch, and its HEAD — `git -C <worktree-path> rev-parse HEAD` — is written down as the run's first **green mark**.
@@ -65,7 +67,7 @@ Each pass takes the next slice in the order and carries it through steps 3–5; 
 
    The third command clears the ignored build state, so a rewound manifest and a stale dependency tree cannot disagree — scoped to the pre-flight list by pathspec, since an unscoped `-fdx` would take the run's local configuration with it and the next slice would have no environment to build in. Skip it when the list is empty, where an unscoped pathspec would sweep the whole tree. **What the reset restores:** every tracked file, plus the paths pre-flight declared disposable. **What survives it:** every other ignored path — which is where the local configuration lives, and where it stays.
 
-   Re-dispatch the same slice on the next rung up, fed the failures from the round before. At the top rung, write a structured blocker to the slice's issue — the slice, the rungs tried, and what failed at each — and carry that blocker into Stage 3: this is the loop's second exit.
+   Re-dispatch the same slice on the next rung up, fed the failures from the round before. At the top rung, write a structured blocker to the slice's issue — the slice, the rungs tried, and what failed at each. Unattended, that blocker is the only way this run asks a question, so write it to read complete to someone who saw none of the rounds, then carry it into Stage 3: this is the loop's second exit.
 
 ## Stage 3 — Review and disposition
 
