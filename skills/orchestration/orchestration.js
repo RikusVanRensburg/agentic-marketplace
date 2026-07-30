@@ -227,9 +227,9 @@ function devPrompt(n, priorDefects) {
 // contract trims.
 function qaPrompt(n, branch) {
   return [
-    `Independently QA issue #${n}, a sub-issue of ${PARENT}. Form your OWN picture from the source of truth - do not trust any prior report.`,
+    `Independently QA issue #${n}, a sub-issue of ${PARENT}. Form your OWN picture from the source of truth: the tracker and the committed code are your only evidence, and you confirm every claim you meet there against the code yourself.`,
     `Read FRESH before judging: issue #${n}'s body + ALL its comments + acceptance criteria; the parent's body + ALL its comments; and every sibling sub-issue's acceptance criteria (to catch overlap or contradiction).`,
-    `The implementation is committed on branch '${branch}'. Inspect it via a TEMPORARY detached worktree (git worktree add --detach <tmpdir> ${branch}; git worktree remove <tmpdir> when done) - NEVER switch the branch of an existing checkout or cd into another clone of this repo. In that worktree: build from a CLEAN state, run the full test suite, and verify EACH acceptance criterion against the parent's intent.`,
+    `The implementation is committed on branch '${branch}'. Inspect it via a TEMPORARY detached worktree (git worktree add --detach <tmpdir> ${branch}; git worktree remove <tmpdir> when done) - keep every git command inside that tmpdir; it is the one checkout you work in. In that worktree: build from a CLEAN state, run the full test suite, and verify EACH acceptance criterion against the parent's intent.`,
     `Return pass:true ONLY if it builds, all tests pass, and every acceptance criterion is met; otherwise pass:false with a specific list of defects.`,
   ].join('\n')
 }
@@ -290,6 +290,12 @@ if (unreconciled.length) {
   ;((recon && recon.integrated) || []).forEach((n) => { if (GRAPH[Number(n)]) alreadyIntegrated.add(Number(n)) })
 }
 
+// Integration is pinned off the ladder. Its rung is named in ONE place so the agent options and the tier its
+// blocker carries cannot drift apart - a null integrate result is infrastructure OR a refusal, and telling those
+// apart in the post-run grilling needs the model that produced it.
+const INTEGRATE_RUNG = { model: 'opus', effort: 'high' }
+const INTEGRATE_TIER = `${INTEGRATE_RUNG.model}/${INTEGRATE_RUNG.effort}`
+
 // Wave scheduler: build all currently-ready issues in parallel (barrier), integrate them serially, repeat.
 // (Waves suit wide+shallow graphs; for narrow+deep graphs a pipeline() per dependency chain pipelines better -
 // deliberate simplicity, revisit with run data.)
@@ -300,15 +306,15 @@ while (ready().length) {
   phase('Integrate')
   for (const b of built.filter(Boolean)) {
     const intg = await agent([
-      `Integrate issue #${b.issue} of ${PARENT}. Work in a TEMPORARY worktree for the target branch (git worktree add <tmpdir> ${SOURCE}; git worktree remove <tmpdir> when done) - NEVER switch the branch of an existing checkout and never cd into another clone of this repo. If the add fails because '${SOURCE}' is checked out elsewhere, use a detached worktree (git worktree add --detach <tmpdir> ${SOURCE}), merge on its detached HEAD, and on success update the branch ref from inside it: git push . HEAD:refs/heads/${SOURCE}`,
+      `Integrate issue #${b.issue} of ${PARENT}. Work in a TEMPORARY worktree for the target branch (git worktree add <tmpdir> ${SOURCE}; git worktree remove <tmpdir> when done) - keep every git command inside that tmpdir; it is the one checkout you work in. If the add fails because '${SOURCE}' is checked out elsewhere, use a detached worktree (git worktree add --detach <tmpdir> ${SOURCE}), merge on its detached HEAD, and on success update the branch ref from inside it: git push . HEAD:refs/heads/${SOURCE}`,
       `In that worktree: note the current HEAD of '${SOURCE}', then merge branch '${b.branch}' into it using git DIRECTLY - do NOT use the approval-gated /commit skill (a workflow cannot answer its prompt).`,
       `If the merge conflicts, do NOT force or guess: abort the merge and return ok:false with the conflicting file paths.`,
       `After a clean merge, VERIFY it: build and run the full test suite on '${SOURCE}'. A textually clean merge can still be semantically broken by sibling slices that landed after this branch forked. If the suite is red, undo the merge (git reset --hard to the pre-merge HEAD you noted), do NOT close the issue, and return ok:false with failureSummary.`,
-      `Only on a VERIFIED merge (suite green): the merge commit message must carry NO Claude/Anthropic/Co-Authored-By attribution. Then close the issue: gh issue close ${b.issue} --reason completed`,
+      `Only on a VERIFIED merge (suite green): write the merge commit message in your own words only - no Claude/Anthropic/Co-Authored-By attribution. Then close the issue: gh issue close ${b.issue} --reason completed`,
       `Return ok (true ONLY if merged, verified, and closed cleanly), commitRef, conflicts, and failureSummary when verification failed.`,
       // opus: post-merge verification is a judgment call (is the red suite the merge's fault or pre-existing?) that
       // gates a close. Its judgment on conflicts stays capped by design: conflicts abort, they are never resolved.
-    ].join('\n'), { label: `integrate:#${b.issue}`, phase: 'Integrate', schema: INTEGRATE_SCHEMA, model: 'opus', effort: 'high' })
+    ].join('\n'), { label: `integrate:#${b.issue}`, phase: 'Integrate', schema: INTEGRATE_SCHEMA, model: INTEGRATE_RUNG.model, effort: INTEGRATE_RUNG.effort })
 
     if (intg && intg.ok) { // ok:true means merged, verified, AND closed
       status[b.issue] = 'integrated'
@@ -319,7 +325,8 @@ while (ready().length) {
       log(`integrated #${b.issue}`)
     } else {
       status[b.issue] = 'blocked'
-      blockers.push({ issue: b.issue, reason: 'integration failed (conflict or post-merge verification)', conflicts: (intg && intg.conflicts) || null, failureSummary: (intg && intg.failureSummary) || null })
+      // tier: integration is pinned, so its own rung is the one that produced this - the ladder never applies here.
+      blockers.push({ issue: b.issue, reason: 'integration failed (conflict or post-merge verification)', tier: INTEGRATE_TIER, conflicts: (intg && intg.conflicts) || null, failureSummary: (intg && intg.failureSummary) || null })
       log(`BLOCKED #${b.issue} at integration - its dependents will not run`)
     }
   }
@@ -339,6 +346,11 @@ const remediation = [] // per-round final-review fix records
 // slices out-of-band on SOURCE, bypassing the per-issue dev/QA/integration pipeline entirely.
 const unintegrated = nums().filter((n) => status[n] !== 'integrated' && !alreadyIntegrated.has(n))
 
+// The judge is pinned off the ladder too, and its rung is named in ONE place for the same reason as
+// INTEGRATE_RUNG: the 'unavailable' blocker has to say which model returned no verdict.
+const REVIEW_RUNG = { model: 'opus', effort: 'xhigh' }
+const REVIEW_TIER = `${REVIEW_RUNG.model}/${REVIEW_RUNG.effort}`
+
 // The judge is reusable: the remediation loop needs a FRESH, isolated re-judgment after every fix - the fixer
 // never grades its own work. A null result is never a verdict: it is infrastructure, OR a safety refusal on
 // the integrated content (current models decline cyber/bio-adjacent work with no error). Same handling either
@@ -348,17 +360,17 @@ const runFinalReview = async (round) => {
   const prompt = [
     `Final review of ${PARENT} as integrated on branch '${SOURCE}'. Form your OWN picture from the source of truth - you know nothing about how the implementation went, and that is deliberate.`,
     `Read FRESH: the parent's body + ALL its comments, and every sub-issue's body + acceptance criteria.`,
-    unintegrated.length ? `OUT OF SCOPE: sub-issues ${unintegrated.map((n) => `#${n}`).join(', ')} did NOT integrate in this run and are already escalated to a human. Judge ONLY the integrated work - do NOT emit findings about those issues' missing functionality.` : '',
-    `Inspect '${SOURCE}' via a TEMPORARY detached worktree (git worktree add --detach <tmpdir> ${SOURCE}; remove it when done) - never switch an existing checkout's branch or cd into another clone of this repo. In it: build from a CLEAN state, run the FULL test suite, and review correctness, security, and edge cases - judging whether the integrated whole meets the parent's intent, especially interactions BETWEEN slices, which per-issue review structurally cannot see.`,
+    unintegrated.length ? `IN SCOPE: the work that actually integrated on '${SOURCE}'. Sub-issues ${unintegrated.map((n) => `#${n}`).join(', ')} never integrated in this run and a human already holds them, so their functionality is absent by design - your findings cover the integrated slices only.` : '',
+    `Inspect '${SOURCE}' via a TEMPORARY detached worktree (git worktree add --detach <tmpdir> ${SOURCE}; remove it when done) - keep every git command inside that tmpdir; it is the one checkout you work in. In it: build from a CLEAN state, run the FULL test suite, and review correctness, security, and edge cases - judging whether the integrated whole meets the parent's intent, especially interactions BETWEEN slices, which per-issue review structurally cannot see.`,
     `Return pass:true ONLY if it builds, the suite is green, and the integrated work meets the parent's intent; otherwise pass:false with findings.`,
     `Report findings only - a separate remediation stage acts on them.`,
-    `Your OUTPUT is billed at a premium - be terse everywhere: no narration, no restating the spec, no praise, no code blocks, minimal intermediate notes. Each finding is ONE line: file:line (or module) - what is wrong - the expected behavior per the spec/criterion it violates - a fix pointer if obvious. That one line must let a cheaper remediation agent fix it WITHOUT re-investigating. Terse never means lenient or incomplete: report EVERY real defect - you are the gate that blocks bad code - and nothing that is not a defect.`,
+    `Your OUTPUT is billed at a premium - be terse everywhere: the findings list is your whole deliverable, so every token you spend goes into it and your working notes stay at what the investigation itself needs. Each finding is ONE line: file:line (or module) - what is wrong - the expected behavior per the spec/criterion it violates - a fix pointer if obvious. That one line must let a cheaper remediation agent fix it WITHOUT re-investigating. Terse never means lenient or incomplete: report EVERY real defect - you are the gate that blocks bad code - and every line you report names one.`,
   ].filter(Boolean).join('\n')
   // opus: the final gate runs opus at xhigh - the same tier as per-issue QA and integration, with deeper
   // reasoning - an integrated-whole judgment that blocks bad code from shipping. Verdicts are output-light
   // and the prompt pins the output format.
-  let fr = await agent(prompt, { label: round ? `final-review:r${round}` : 'final-review', phase: 'Final Review', schema: FINAL_REVIEW_SCHEMA, model: 'opus', effort: 'xhigh' })
-  if (!fr) fr = await agent(prompt, { label: `final-review${round ? `:r${round}` : ''}:retry`, phase: 'Final Review', schema: FINAL_REVIEW_SCHEMA, model: 'opus', effort: 'xhigh' })
+  let fr = await agent(prompt, { label: round ? `final-review:r${round}` : 'final-review', phase: 'Final Review', schema: FINAL_REVIEW_SCHEMA, model: REVIEW_RUNG.model, effort: REVIEW_RUNG.effort })
+  if (!fr) fr = await agent(prompt, { label: `final-review${round ? `:r${round}` : ''}:retry`, phase: 'Final Review', schema: FINAL_REVIEW_SCHEMA, model: REVIEW_RUNG.model, effort: REVIEW_RUNG.effort })
   if (!fr) return { status: 'unavailable', findings: [] }
   const findings = (fr.findings && fr.findings.length) ? fr.findings
     : (fr.pass ? [] : ['Final review failed without listing findings - independently re-run the full suite and every acceptance criterion, identify the concrete failure, and fix it'])
@@ -379,11 +391,11 @@ if (anyIntegrated && !input.finalReviewDone) {
     const rung = LADDER[round - 1]
     const rungLabel = `${rung.model}/${rung.effort}`
     const fix = await agent([
-      `Remediate final-review findings for ${PARENT} on branch '${SOURCE}'. The per-issue work is already merged and its issues are closed - do NOT reopen, close, or create issues; fix the integrated code itself.`,
-      `Findings to fix (fix ONLY these - no scope creep):\n${finalReview.findings.map((f, i) => `${i + 1}. ${f}`).join('\n')}`,
+      `Remediate final-review findings for ${PARENT} on branch '${SOURCE}'. The per-issue work is already merged and its issues are closed - the tracker is settled, so leave it as it stands and put all your work into the integrated code itself.`,
+      `Findings to fix - exactly these, and they are the whole scope of this round. Anything else you notice belongs in your summary rather than the diff:\n${finalReview.findings.map((f, i) => `${i + 1}. ${f}`).join('\n')}`,
       blockerAnswers.FINAL ? `Resolved guidance from the human: ${blockerAnswers.FINAL}` : '',
-      `Work in a TEMPORARY worktree of '${SOURCE}' (git worktree add <tmpdir> ${SOURCE}; remove it when done) - never switch an existing checkout's branch or cd into another clone of this repo. If the add fails because '${SOURCE}' is checked out elsewhere, use a detached worktree (git worktree add --detach <tmpdir> ${SOURCE}), commit on its detached HEAD, then update the branch ref from inside it: git push . HEAD:refs/heads/${SOURCE}`,
-      `Run the FULL test suite; commit to '${SOURCE}' ONLY when green, with a conventional-commit message and NO Claude/Anthropic/Co-Authored-By attribution.`,
+      `Work in a TEMPORARY worktree of '${SOURCE}' (git worktree add <tmpdir> ${SOURCE}; remove it when done) - keep every git command inside that tmpdir; it is the one checkout you work in. If the add fails because '${SOURCE}' is checked out elsewhere, use a detached worktree (git worktree add --detach <tmpdir> ${SOURCE}), commit on its detached HEAD, then update the branch ref from inside it: git push . HEAD:refs/heads/${SOURCE}`,
+      `Run the FULL test suite; commit to '${SOURCE}' ONLY when green, with a conventional-commit message in your own words only - no Claude/Anthropic/Co-Authored-By attribution.`,
       `Return committed (true ONLY if a green fix is committed), commitRef, and a 1-3 sentence summary.`,
     ].filter(Boolean).join('\n'), { label: `remediate:r${round}:${rungLabel}`, phase: 'Final Review', schema: REMEDIATE_SCHEMA, model: rung.model, effort: rung.effort })
     if (!fix) {
@@ -391,7 +403,9 @@ if (anyIntegrated && !input.finalReviewDone) {
       // models decline cyber/bio-adjacent work with no error). Same handling either way - one same-rung retry
       // that doesn't burn a rung, then a blocker naming both candidate causes.
       if (!fixerInfraRetried) { fixerInfraRetried = true; round--; continue }
-      blockers.push({ issue: 'FINAL', reason: 'remediation agent returned no result - infrastructure or refusal (after same-rung retry)', findings: finalReview.findings })
+      // tier: as at the dev site - remediation[] is still empty on a round-1 null, so the rung must be named
+      // here or the blocker carries no tier at all, and the grilling cannot tell a refusal from infrastructure.
+      blockers.push({ issue: 'FINAL', reason: 'remediation agent returned no result - infrastructure or refusal (after same-rung retry)', tier: rungLabel, findings: finalReview.findings })
       remediationAborted = true
       break
     }
@@ -406,10 +420,13 @@ if (anyIntegrated && !input.finalReviewDone) {
     log(`final review after remediation r${round} (${rungLabel}): ${finalReview.status.toUpperCase()}`)
   }
   if (!remediationAborted && finalReview.status === 'fail') {
-    blockers.push({ issue: 'FINAL', reason: `final review findings survived ${remediation.length} remediation round(s) - ladder exhausted`, findings: finalReview.findings })
+    // tier: exhaustion means every rung ran, so the top rung is the one whose fix the findings survived.
+    const topRung = LADDER[LADDER.length - 1]
+    blockers.push({ issue: 'FINAL', reason: `final review findings survived ${remediation.length} remediation round(s) - ladder exhausted`, tier: `${topRung.model}/${topRung.effort}`, findings: finalReview.findings })
   } else if (finalReview.status === 'unavailable') {
     const ungraded = remediation.map((r) => r.commitRef).filter(Boolean)
-    blockers.push({ issue: 'FINAL', reason: `final review returned no verdict - infrastructure or refusal (after retry)${ungraded.length ? ` - remediation commit(s) ${ungraded.join(', ')} on '${SOURCE}' are UNGRADED` : ''}`, findings: lastFindings })
+    // tier: the judge is pinned, so its own rung is the one that returned no verdict - never a ladder rung.
+    blockers.push({ issue: 'FINAL', reason: `final review returned no verdict - infrastructure or refusal (after retry)${ungraded.length ? ` - remediation commit(s) ${ungraded.join(', ')} on '${SOURCE}' are UNGRADED` : ''}`, tier: REVIEW_TIER, findings: lastFindings })
   }
 }
 
