@@ -15,6 +15,8 @@ it is the single source of truth for every row this skill does not define below.
 
 ## Rows 5–6
 
+**The first row that matches is the one to enter, and rows 1–4 in [../../docs/pipeline.md](../../docs/pipeline.md) come first.** Rows co-match: a resumed run whose map gained a research ticket after the spec was sliced satisfies row 2 and row 5 at once, and it enters row 2.
+
 | # | Enter when | Stage |
 |---|---|---|
 | 5 | Spec has open slices | `rr-workshop:orchestration` — relaunching against the same SOURCE *is* the resume |
