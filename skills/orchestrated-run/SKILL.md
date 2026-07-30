@@ -24,7 +24,7 @@ it is the single source of truth for every part of the pipeline not defined belo
 
 Row 6 turns on two observable tests:
 
-- **Slice state** — `gh issue list`, or `gh issue view <n> --json state` per slice. Integration closes a slice only after the merge built and the full suite passed on SOURCE, so CLOSED *is* the integration record. No comment of any kind is posted for an integration; do not look for one.
+- **Slice state** — `gh issue list`, or `gh issue view <n> --json state` per slice. Integration closes a slice `completed` only after the merge built and the full suite passed on SOURCE, so that reason *is* the integration record. No comment of any kind is posted for an integration; do not look for one. A slice closed on any other reason was descoped rather than built, and still satisfies this row — descoped work is finished business — so report it as out of scope, never as integrated.
 - **Branch state** — the `git merge-base --is-ancestor` test in [../../docs/merge-back.md](../../docs/merge-back.md), which also carries the verdict when it comes back finished.
 
 ## Merging into BASE

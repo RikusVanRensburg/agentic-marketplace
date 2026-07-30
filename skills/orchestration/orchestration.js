@@ -145,7 +145,7 @@ if (input.ladder !== undefined) {
 }
 
 const handoff = {}   // issueNumber -> note string (passed to dependent DEV prompts ONLY)
-const status = {}    // issueNumber -> 'integrated' | 'blocked'
+const status = {}    // issueNumber -> 'integrated' | 'blocked' | 'descoped'
 const blockers = []  // structured escalation records
 const integrationOrder = [] // issues in the order they actually merged
 const commitRefs = {}       // issueNumber -> merge commit ref
@@ -159,6 +159,14 @@ const ready = () =>
     .filter((n) => !status[n] && !alreadyIntegrated.has(n) && depsMet(n))
     .sort((a, b) => downstreamCount(b) - downstreamCount(a)) // unblock the most downstream work first
 
+const RECONCILE_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: {
+    integrated: { type: 'array', items: { type: 'number' }, description: 'closed with reason COMPLETED - the work landed' },
+    descoped: { type: 'array', items: { type: 'number' }, description: 'closed on ANY other reason (NOT_PLANNED, or none at all) - never built' },
+  },
+  required: ['integrated', 'descoped'],
+}
 const DEV_SCHEMA = {
   type: 'object', additionalProperties: false,
   properties: {
@@ -280,14 +288,45 @@ async function buildIssue(n) {
 }
 
 // Resume reconciliation: a session can die after an issue closes but before the report is read.
-// Skip anything already CLOSED on the tracker, not just whatever args carried.
+// Skip anything already CLOSED on the tracker, not just whatever args carried - but CLOSED alone never means
+// landed. Integration closes with --reason completed, so `completed` is the mark THIS pipeline writes; any other
+// reason is a closure the run cannot vouch for (`not_planned`, which is also where a duplicate lands, or no reason
+// at all on a hand-closed issue) and means the slice left the scope WITHOUT being built. Test for `completed`
+// positively rather than against the descoped reasons: GitHub is free to add reasons, and an unrecognized one
+// read as done would silently skip a slice and let its dependents build on functionality that does not exist.
+const descoped = new Set()
 const unreconciled = nums().filter((n) => !alreadyIntegrated.has(n))
 if (unreconciled.length) {
   const recon = await agent(
-    `For each of these issue numbers [${unreconciled.join(', ')}] (all sub-issues of ${PARENT}), check the tracker and report which are already CLOSED. Return { integrated: [issue numbers] } only.`,
-    { label: 'reconcile', phase: 'Build', model: 'haiku', effort: 'low', schema: { type: 'object', additionalProperties: false, properties: { integrated: { type: 'array', items: { type: 'number' } } }, required: ['integrated'] } }
+    [
+      `For each of these issue numbers [${unreconciled.join(', ')}] (all sub-issues of ${PARENT}), read BOTH its state and its close reason: gh issue view <n> --json state,stateReason`,
+      `Sort every CLOSED one by that reason. stateReason COMPLETED goes in 'integrated'. EVERY other closed issue goes in 'descoped' - NOT_PLANNED, a reason you do not recognize, or no reason at all. An OPEN issue goes in neither list.`,
+      `Casing matters: gh issue view returns these upper-cased (CLOSED, COMPLETED, NOT_PLANNED), while the REST API (gh api) returns state/state_reason lower-cased. Match whichever surface you actually call - a filter written for the other one matches nothing.`,
+      `Return { integrated: [...], descoped: [...] } only. Every number appears in at most one list, and you invent no numbers you were not given.`,
+    ].join('\n'),
+    { label: 'reconcile', phase: 'Build', model: 'haiku', effort: 'low', schema: RECONCILE_SCHEMA }
   )
   ;((recon && recon.integrated) || []).forEach((n) => { if (GRAPH[Number(n)]) alreadyIntegrated.add(Number(n)) })
+  ;((recon && recon.descoped) || []).forEach((n) => { if (GRAPH[Number(n)] && !alreadyIntegrated.has(Number(n))) descoped.add(Number(n)) })
+}
+if (descoped.size) {
+  // A descoped slice was never built. Whether its dependents still stand depends on WHY it was descoped, which
+  // only the human who closed it knows - so halt rather than guess. This runs before the wave loop, so nothing
+  // has been built or merged when it throws, and the throw names every mismatch at once instead of the first.
+  const orphaned = [...descoped]
+    .map((d) => ({ slice: d, dependents: nums().filter((m) => GRAPH[m].deps.includes(d) && !alreadyIntegrated.has(m) && !descoped.has(m)) }))
+    .filter((x) => x.dependents.length)
+  if (orphaned.length) {
+    throw new Error(
+      `orchestration: the graph no longer matches the tracker - ` +
+      orphaned.map((x) => `#${x.slice} is closed WITHOUT reason completed (never built), and #${x.dependents.join(', #')} ${x.dependents.length > 1 ? 'depend' : 'depends'} on it`).join('; ') +
+      `. Reopen those issues, or relaunch with a graph that accounts for the descoped work.`
+    )
+  }
+  // Nothing depends on them: mark them so the wave loop skips them, the final-review judge is told they are out
+  // of scope (via `unintegrated`), and the run report tells them apart from slices that actually landed.
+  for (const d of descoped) status[d] = 'descoped'
+  log(`descoped (closed without reason completed, never built): ${[...descoped].map((n) => `#${n}`).join(', ')}`)
 }
 
 // Integration is pinned off the ladder. Its rung is named in ONE place so the agent options and the tier its
@@ -442,6 +481,7 @@ return {
   finalReview,
   remediation,
   blocked: blockers,
+  descoped: nums().filter((n) => status[n] === 'descoped'), // closed without reason completed - never built, nothing depended on them
   notRun: nums().filter((n) => !status[n] && !alreadyIntegrated.has(n)), // halted upstream - never became ready
   graph: GRAPH,
   // Hand `integrated` back via args on a resume so the re-run is idempotent (plus the live reconcile above),

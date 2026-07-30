@@ -41,7 +41,16 @@ Every ambiguity is resolved now.
 ### Once, before the first dispatch
 
 1. **Create the worktree** on the run branch, forked from the base branch: `git worktree add -b <run-branch> <worktree-path> <base-branch>`. Resuming a run whose branch already exists, drop the `-b` and pass the run branch as the commit-ish. Done when `git -C <worktree-path> rev-parse --abbrev-ref HEAD` prints the run branch, and its HEAD — `git -C <worktree-path> rev-parse HEAD` — is written down as the run's first **green mark**.
-2. **Reconcile against the tracker**, once: `gh api --paginate repos/{owner}/{repo}/issues/<PARENT>/sub_issues --jq '.[] | select(.state=="closed") | .number'`. Every slice it names is already landed — drop it from the order and spend no agent on it.
+2. **Reconcile against the tracker**, once, reading every closed slice's reason alongside its state — [engine-preflight.md](../../docs/engine-preflight.md)'s "What a CLOSED slice means" governs what each reason licenses, including the casing trap between the two `gh` surfaces:
+
+   ```bash
+   gh api --paginate repos/{owner}/{repo}/issues/<PARENT>/sub_issues \
+     --jq '.[] | select(.state == "closed") | {number, reason: .state_reason}'
+   ```
+
+   Sort what it returns. A slice reading `completed` is **landed**: drop it from the order and spend no agent on it. A slice closed on any other reason is **descoped**: drop it from the order too, and write it down for Stage 3 among the slices that never landed.
+
+   Then check the order once for the mismatch that stops the run: any slice still to be dispatched that names a descoped slice among its blockers. Found one ⇒ **stop**, and surface every descoped slice with the dependents that named it. Pre-flight's approval covered the tree as it stood; a slice descoped since then is a tree that changed underneath it, and only the human who descoped it knows whether its dependents still stand. Done when every closed slice sits on exactly one side of that sort, and no undispatched slice in the order names a descoped blocker.
 
 ### Per slice — steps 3–5, repeated until the order is exhausted or a slice exhausts its rungs
 
@@ -89,6 +98,7 @@ Done when a verdict is in hand, and the prompt that produced it carried all six 
 **Read the shared flags in [../../docs/engine-preflight.md](../../docs/engine-preflight.md) and stop on any of them.** In this engine "the graph" is the total order pre-flight sorts. This engine adds one:
 
 - Two slices in flight at once in the shared worktree. One writer at a time, always: concurrent sub-agents overwrite each other's working tree and the run's history stops being recoverable.
+- A slice dispatched while a descoped slice sits among its blockers — the work it builds on was never built, so what it produces is untestable against the tree pre-flight approved.
 
 ## Done when
 
@@ -97,10 +107,10 @@ Every box in [../../docs/engine-preflight.md](../../docs/engine-preflight.md)'s 
 - [ ] The order is total: every slice has exactly one position, and every slice's blockers sit above it.
 - [ ] The run branch, the base branch, the worktree path, the build command and the test command are written down, and every ignore rule in force is ruled disposable or kept with its reason.
 - [ ] Exactly one worktree exists for this run, on the run branch, created by `git worktree add`.
-- [ ] The closed-slice reconcile ran before the first dispatch.
+- [ ] The closed-slice reconcile ran before the first dispatch, read each closure's reason, and sorted every closed slice into landed or descoped.
 - [ ] Every slice that landed was closed only after its sub-agent reported `committed: true` with the SHA that the worktree's HEAD prints, and pre-flight's build command and test command both ran green there on the run branch.
 - [ ] Every retry ran `reset --hard <green-mark>` then `clean -fd` before re-dispatching, plus `clean -fdx` scoped to the disposable paths whenever that list was non-empty.
 - [ ] Any slice that exhausted its rungs has a structured blocker on its issue, and no slice below it in the order was dispatched.
-- [ ] Every slice in the order is accounted for on exactly one of four counts: closed this run, reconciled as already landed, blocked with its blocker on its issue, or below the blocker and undispatched.
+- [ ] Every slice in the order is accounted for on exactly one of five counts: closed this run, reconciled as already landed, reconciled as descoped, blocked with its blocker on its issue, or below the blocker and undispatched.
 - [ ] The end-of-run review returned a verdict, and it was relayed.
 - [ ] The disposition was the user's choice, and the base branch is unchanged unless they chose to change it.

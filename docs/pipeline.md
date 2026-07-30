@@ -3,7 +3,7 @@
 This is the shared pipeline both routers read; each router owns its own row 5, row 6, and
 disposition beyond it.
 
-**The tree carries the state.** A run's only durable artifact is its GitHub issue tree: the map indexes the decisions, the spec issue is the spec, the slices are the plan, a closed slice is its work verified green on the run's branch (each router's row 6 names the test its engine applies), and the final-review comment on the spec is the review trail. Nothing lands on disk — no ledger, no plan file, no review file — so any session, on any machine, re-derives where the run stands from the tree.
+**The tree carries the state.** A run's only durable artifact is its GitHub issue tree: the map indexes the decisions, the spec issue is the spec, the slices are the plan, a slice closed `completed` is its work verified green on the run's branch while a slice closed on any other reason is work **descoped** without being built (each router's row 6 names the test its engine applies), and the final-review comment on the spec is the review trail. Nothing lands on disk — no ledger, no plan file, no review file — so any session, on any machine, re-derives where the run stands from the tree.
 
 ## The seed
 

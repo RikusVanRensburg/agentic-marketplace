@@ -23,7 +23,7 @@ it is the single source of truth for every part of the pipeline not defined belo
 Row 6 turns on three conditions. Check the **disposition** first: it is the condition this pipeline adds, and the one that reads as already satisfied once the other two hold.
 
 - **Disposition** — the human chose *merge* at the relay's disposition step (`rr-workshop:relay-implement`, Stage 3), and you have their words for it. Every other choice on that menu parks the run: report where it stands and start nothing.
-- **Slice state** — `gh issue list`, or `gh issue view <n> --json state` per slice. Here CLOSED means *committed green on the run branch*: the relay closes a slice once it built clean with a green full suite there. The state is the whole record; a landed slice carries no comment.
+- **Slice state** — `gh issue list`, or `gh issue view <n> --json state` per slice. Here a slice closed `completed` means *committed green on the run branch*: the relay closes it that way once it built clean with a green full suite there. The state is the whole record; a landed slice carries no comment. A slice closed on any other reason was descoped rather than built, and still satisfies this row — descoped work is finished business — so report it as out of scope, never as landed.
 - **Branch state** — the `git merge-base --is-ancestor` test in [../../docs/merge-back.md](../../docs/merge-back.md), which also carries the verdict when it comes back finished.
 
 ## Merging into the base branch

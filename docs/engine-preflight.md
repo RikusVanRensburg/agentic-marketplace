@@ -13,7 +13,7 @@ they differ.
 Each engine adds its own; these hold for both.
 
 - **A breakdown EXISTS.** `gh api --paginate repos/{owner}/{repo}/issues/<PARENT>/sub_issues --jq '.[].number'` prints nothing ⇒ **stop** and point at `rr-workshop:to-issues`. An engine implements a tree; it creates no issues and edits no bodies, so a missing or wrong breakdown goes back there too.
-- **Every slice still open carries `state: ready-for-agent` or `state: in-progress`.** First `gh label list --limit 200 --json name --jq '.[].name' | grep '^state:'` — empty output means the repo has no `state:` taxonomy, so nothing distinguishes a slice an agent may build from one reserved for a human: **stop** and get the user to confirm slice by slice. Otherwise read each slice's state alongside its labels (`gh issue view <n> --json state,labels --jq '[.state] + [.labels[].name]'`) and check the labels of the slices that read OPEN. Both engines read any CLOSED slice as landed — whether it merged, or was closed as not-planned or as a duplicate — and each drops it in Stage 2 on its own closed-slice reconcile before any slice is dispatched, so its labels decide nothing here. An open slice carrying neither passing label ⇒ **stop** and surface it.
+- **Every slice still open carries `state: ready-for-agent` or `state: in-progress`.** First `gh label list --limit 200 --json name --jq '.[].name' | grep '^state:'` — empty output means the repo has no `state:` taxonomy, so nothing distinguishes a slice an agent may build from one reserved for a human: **stop** and get the user to confirm slice by slice. Otherwise read each slice's state alongside its labels (`gh issue view <n> --json state,labels --jq '[.state] + [.labels[].name]'`) and check the labels of the slices that read OPEN. Both engines drop every CLOSED slice in Stage 2 on their own closed-slice reconcile, before any slice is dispatched — what that closure *means* is "What a CLOSED slice means" below — so a closed slice's labels decide nothing here. An open slice carrying neither passing label ⇒ **stop** and surface it.
 
   `state: in-progress` passes because it is the mark a prior dispatch left: `rr-workshop:build-with-tdd` swaps `ready-for-agent` for it when it claims a slice, and completion is recorded by the issue being CLOSED rather than by a label. So a relaunch reads `in-progress` on every open slice an earlier run already touched — including the blocked slice the relaunch exists to retry, which is what makes resume reachable at all.
 
@@ -25,6 +25,23 @@ Each engine adds its own; these hold for both.
 ## Reading the tree
 
 The parent's body + **all** comments; enumerate every slice (`--paginate`) and read each body + **all** comments + acceptance criteria. Done when no slice remains unread.
+
+## What a CLOSED slice means
+
+A closed slice carries a **close reason**, and the reason — not the closed state — is what says whether the work exists. Both engines read it the same way in their Stage 2 reconcile:
+
+| Reason | The slice | The engine |
+|---|---|---|
+| `completed` | **landed** — built, verified, closed by this pipeline | Drop it from the work; spend no agent on it |
+| anything else | **descoped** — it left the scope without being built | Drop it from the work too, and record it as descoped, never as landed |
+
+Both engines close their own slices with `--reason completed`, so `completed` is the mark this pipeline writes and the reconcile reads back. **Test for `completed` positively**, rather than against the reasons that mean descoped: `not_planned` is also where a duplicate lands, a hand-closed issue can carry no reason at all, and GitHub is free to add reasons — an unrecognized one must read as descoped, never as done.
+
+**A descoped slice with anything still-to-build depending on it stops the run.** Its dependents would build on functionality that does not exist, and whether they still stand depends on *why* it was descoped — which only the human who closed it knows. Each engine states its own stop mechanics; both stop before dispatching anything, and both name every descoped slice with its dependents so the human sees the whole mismatch at once.
+
+**The two `gh` surfaces disagree on spelling.** REST (`gh api …/sub_issues`) returns `state` and `state_reason` lower-cased (`closed`, `completed`, `not_planned`); `gh issue view <n> --json state,stateReason` returns a camelCase field with upper-cased values (`CLOSED`, `COMPLETED`, `NOT_PLANNED`). A filter written for one surface matches nothing on the other and silently reports every slice as unlanded, so match the surface actually being called.
+
+A reopened slice reads OPEN and carries no reason, so it needs no case of its own — it is simply work still to do.
 
 ## Promoting an edge
 
