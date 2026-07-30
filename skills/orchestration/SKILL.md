@@ -7,8 +7,7 @@ The **breakdown** exists; now drive **every** slice to merged, unattended.
 
 Two stages. An interactive **pre-flight** in this session freezes the dependency graph — the **frontier** the run works, one wave of unblocked slices at a time. Then the launched workflow ([orchestration.js](orchestration.js)) carries that frontier to done with no human in the loop.
 
-**The standing rule on findings, the shared prerequisites, pre-flight's tree read, its edge rule, its
-grilling step, its red flags and the shared checklist are common to both engines.** Read
+**Pre-flight is shared with the other engine.** Read
 [../../docs/engine-preflight.md](../../docs/engine-preflight.md) before pre-flight begins —
 it is the single source of truth for every requirement this skill does not state below.
 

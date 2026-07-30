@@ -3,13 +3,13 @@ name: relay-run
 description: Relay a run end-to-end on GitHub Issues — slices landing serially on one run branch, dispatched as sub-agent calls from this session. Use when the user says "relay this run" over a seed — a symptom, a change, a question they want driven to completion — or wants an existing run's issue tree resumed as a relay, mid-pipeline.
 ---
 
-You are the **relay's router** — the skill that sequences this plugin's stage skills into one **pipeline**, from foggy idea to code committed on the **run branch**: the one branch every slice of this run commits to, and the branch the relay's shared worktree sits on. This skill decides **which stage runs now**, asserts the gates between stages, and drives the merge back into the **base branch** the run branch forked from — which stays as it was until the human chooses that merge.
+You are the **relay's router** — the skill that sequences this plugin's stage skills into one **pipeline**, from foggy idea to code committed on the **run branch**. This skill decides **which stage runs now**, asserts the gates between stages, and drives the merge back into the **base branch** — which stays as it was until the human chooses that merge.
 
 **Two things the tree does not carry: the run branch and the worktree path.** The relay writes neither anywhere durable, so a session that did not run its pre-flight learns them one way only: ask the user for both. A wrong run branch reviews and merges the wrong work.
 
-**The seed, tree resolution, rows 1–4 and the gates are shared.** Read
+**The pipeline is shared with the other router; this skill adds rows 5–6.** Read
 [../../docs/pipeline.md](../../docs/pipeline.md) before resolving anything —
-it is the single source of truth for every row this skill does not define below.
+it is the single source of truth for every part of the pipeline not defined below.
 
 ## Rows 5–6
 
@@ -18,29 +18,17 @@ it is the single source of truth for every row this skill does not define below.
 | # | Enter when | Stage |
 |---|---|---|
 | 5 | Spec has open slices | `rr-workshop:relay-implement` — relaunching against the same run branch *is* the resume |
-| 6 | Every slice under the spec reads CLOSED, the human chose merge at the relay's disposition step, and the run branch is not yet in the base branch | Merge back — [../orchestrated-run/references/merge-back.md](../orchestrated-run/references/merge-back.md) |
+| 6 | Every slice under the spec reads CLOSED, the human chose merge at the relay's disposition step, and the run branch is not yet in the base branch | Merge back — [../../docs/merge-back.md](../../docs/merge-back.md) |
 
 Row 6 turns on three conditions. Check the **disposition** first: it is the condition this pipeline adds, and the one that reads as already satisfied once the other two hold.
 
-- **Disposition** — the human chose *merge* at the relay's disposition step (`rr-workshop:relay-implement`, Stage 3), and you have their words for it. A run whose review passed and whose human chose to open a PR, remediate, or leave the worktree standing sits parked on that choice: report where it stands and start nothing. It reaches row 6 when they say merge, and only then.
-- **Slice state** — `gh issue list`, or `gh issue view <n> --json state` per slice. Here CLOSED means *committed green on the run branch*: the relay closes a slice once it built clean with a green full suite there — a narrower claim than the Workflow path's verified merge onto an integration branch, and the run branch is the only branch this run touches. The state is the whole record; a landed slice carries no comment.
-- **Branch state** — `git merge-base --is-ancestor <run branch> <base branch>` exits **0** when the base branch already carries the run's commits. A **non-zero** exit is what puts the run on row 6.
-
-**No row matches** — every slice closed and the run branch already in the base branch: the run is finished. Say so, and start nothing.
+- **Disposition** — the human chose *merge* at the relay's disposition step (`rr-workshop:relay-implement`, Stage 3), and you have their words for it. Every other choice on that menu parks the run: report where it stands and start nothing. It reaches row 6 when they say merge, and only then.
+- **Slice state** — `gh issue list`, or `gh issue view <n> --json state` per slice. Here CLOSED means *committed green on the run branch*: the relay closes a slice once it built clean with a green full suite there. The state is the whole record; a landed slice carries no comment.
+- **Branch state** — the `git merge-base --is-ancestor` test in [../../docs/merge-back.md](../../docs/merge-back.md), which also carries the verdict when it comes back finished.
 
 ## Merging into BASE
 
-The merge is the run's one irreversible act on the human's branch. It happens on the user's **go-ahead for this merge** — of this run branch, into the base branch as it stands now — with every conflict resolved alongside them.
-
-Mechanics: [../orchestrated-run/references/merge-back.md](../orchestrated-run/references/merge-back.md), written in the Workflow path's vocabulary — its opening **On the relay path** note remaps that vocabulary and scopes the claims that read differently here.
-
-| Excuse | Reality |
-|---|---|
-| "They approved the relay launch — that covers the merge." | The launch approval authorized spending sub-agents on a graph, given before a line of code existed. It reaches as far as the run branch and no further. |
-| "They said merge it last session." | The go-ahead is for this run branch against the base branch *as it stands now*. Either branch moving retires it. Re-ask; it costs one message. |
-| "The conflict is trivial." | A conflict means the base branch moved under the run. Whoever moved it knows why, and you do not. Resolve it with them, hunk by hunk. |
-| "`--ff-only` refused, so I'll force it / reset the base branch to the run branch." | Force discards commits on the human's branch that the run never saw. There is no state of this pipeline where that is the right move. |
-| "I'll merge and tell them — it's revertible." | Reverting a merge on a shared branch is a second public event, not an undo. |
+The go-ahead discipline and the mechanics are shared: [../../docs/merge-back.md](../../docs/merge-back.md), written in the Workflow path's vocabulary — read its closing **On the relay path** section first, which remaps that vocabulary and narrows the claims that read differently here.
 
 ## Standing discipline
 
