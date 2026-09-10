@@ -33,8 +33,11 @@ it — do not open a second for the next change.
 ## 3. `rr-core:stack-up`
 
 Run **from the new worktree**, so the stack is built from this branch. That leaf builds per csproj,
-assembles `--bin`, brings the workspace up under `<root>\local\timebase_<4 hex>`, applies the Food &
-Beverage content and proves values resolve.
+stages each host's SPA, assembles `--bin` as junctions, pre-seeds the Food & Beverage domain, brings
+the workspace up under `<root>\local\timebase_<4 hex>` (passing `--target local` — the tool's own
+default is Docker), wires the Collector, Connector and Atlas through their `/api` planes, records
+`rr-stack.json`, and proves values resolve. It never imports the stack's CA into the machine store;
+if the user wants a browser login, that is a separate, explicit step after the handover.
 
 If it stops on something — a port block in use, a build failure, a content step that cannot be
 confirmed — report that and stop. A half-built stack is worth naming, not working around.
@@ -46,8 +49,8 @@ Report, in one block:
 - branch and worktree path
 - stack id, folder, and target
 - every host's URL, and the ports if they were not the caller's
-- that secrets are in `<stack>\.env`, and whether the CA was imported
-- the instance whose values came back Good
+- that secrets are in `<stack>\.env`, that the CA was not imported, and where it is
+- the instance whose values came back Good, and that Explorer's shipped sources were not re-pointed
 - what to run next: `rr-core:work-refresh` after each change, `rr-core:work-finish` at the end
 
 Then **stop**. This skill sets the session up; it does not start the work.

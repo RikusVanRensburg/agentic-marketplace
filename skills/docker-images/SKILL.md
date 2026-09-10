@@ -13,10 +13,11 @@ what is actually needed.
 
 ## 1. Decide the tag first — it is what usually goes wrong
 
-The workspace tool's `--image-tag` defaults to the **product version** (from `version.txt`'s
-`Release:` line, stamped repo-wide). A locally built image carries whatever tag was passed to the
-publish script. Mismatch them and the stack hunts for `timebase/pulse:<product version>`, finds
-nothing, and fails in a way that says nothing about tags.
+The workspace tool's `--image-tag` defaults to **its own product version** — the assembly's
+informational version, stamped repo-wide from `version.txt`'s `Release:` line — and writes it into
+the stack's `.env` as `TIMEBASE_VERSION`. A locally built image carries whatever tag was passed to
+the publish script. Mismatch them and the stack hunts for `timebase/pulse:<product version>`, finds
+nothing, and fails with "A Timebase image is missing locally".
 
 So: pick the tag, use it for every component in one run, and **report it** so the stack can be
 brought up with a matching `--image-tag`.
@@ -55,8 +56,12 @@ The seven components and their paths (the list also lives in `docker-publish-all
 ./docker-publish-all.ps1 -version <tag> -local
 ```
 
-`./build.ps1 --target Docker` is the Cake build's Docker target and also builds every image — the
-only other thing in the repo that builds them.
+`./build.ps1 --target Docker` is the Cake build's Docker target and also builds every image, driven
+by `build-manifest.json` and tagged from `version.txt`'s `Release:` — the only other thing in the
+repo that builds them, and the right call when the stack will run on the default tag.
+
+Which components a stack needs is what its workspace file names — `plan` lists them. A six-host
+stack without Bridge does not need `bridge` built.
 
 Add `-no-cache` only when a stale layer is actually suspected; it costs the full build time again.
 

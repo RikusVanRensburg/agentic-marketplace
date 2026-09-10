@@ -1,6 +1,6 @@
 ---
 name: work-refresh
-description: Put the current worktree's latest code under its running stack and re-prove it — rebuild what changed, restart, verify.
+description: Put the current worktree's latest code under its running stack and re-prove it — stop, rebuild what changed, bring it back up on the same options, verify.
 disable-model-invocation: true
 ---
 
@@ -11,8 +11,11 @@ secrets survive.
 
 ## 1. Find this worktree's stack
 
-The stack was created from this branch, so match on it: enumerate `timebase_*` folders under the
-root and read each `workspace-plan.json`, whose `--bin` points back at the worktree that built it.
+The stack was created from this worktree, and `stack-up` recorded that: enumerate `timebase_*`
+folders under the root and match `rr-stack.json`'s `worktree` to `git rev-parse --show-toplevel`.
+Nothing the tool itself writes names the worktree — `workspace-plan.json` has ports and components,
+`processes.json` has pids. If `rr-stack.json` is missing, `(Get-Item "<root>\bin\<slug>\Atlas").Target`
+says which worktree the junction points at; then write the file.
 
 - **No stack for this worktree** → say so and offer `rr-core:work-start`. Do not stand a second one
   up silently.
@@ -20,13 +23,15 @@ root and read each `workspace-plan.json`, whose `--bin` points back at the workt
 
 ## 2. `rr-core:stack-update`
 
-That leaf rebuilds the changed hosts per csproj, restarts without purging — so `.env` stays valid
-and collected history survives — and re-runs `verify` plus `--expect-values`.
+That leaf stops the stack, rebuilds the changed hosts per csproj (and re-stages a host's SPA when its
+UI changed), brings it back up on the recorded command line without purging — so `.env` stays valid,
+collected history survives, and Atlas recompiles the domain it already had — and re-runs `verify`
+plus `--expect-values` against the recorded instance.
 
 Two things not to do on a refresh:
 
-- **Do not purge.** It regenerates every client secret and wipes the commissioned content. If a
-  reset is genuinely wanted, say so and let the leaf handle it explicitly.
+- **Do not purge.** It regenerates every client secret and wipes the pre-seeded domain and the
+  wiring. If a reset is genuinely wanted, say so and let the leaf handle it explicitly.
 - **Do not change the image tag or the options** the stack came up with. A stack restarted on
   different options is no longer the stack that was tested.
 
@@ -41,7 +46,7 @@ Then stop. Reviewing the change in the product is the user's job.
 
 ## Done when
 
-- [ ] The stack was matched to this worktree, not guessed at.
+- [ ] The stack was matched to this worktree through `rr-stack.json`, not guessed at.
 - [ ] Only changed hosts were rebuilt, and the restart preserved data and secrets.
 - [ ] `verify` and `--expect-values` were re-run and reported against the same instance.
 - [ ] Nothing was purged, retagged or re-optioned.

@@ -31,8 +31,11 @@ The branch work integrates into is frequently **not** the repository's default b
 ```sh
 gh repo view --json defaultBranchRef -q .defaultBranchRef.name
 git branch -r --list 'origin/*'
-git merge-base --fork-point origin/<candidate> HEAD   # closest candidate = most likely base
+git rev-list --count origin/<candidate>..HEAD          # fewest commits ahead = most likely base
 ```
+
+(`merge-base --fork-point` looks tempting but reads the reflog, which a fresh worktree does not have;
+counting commits ahead of each candidate works everywhere.)
 
 Take the target from the caller when given. Otherwise propose the closest candidate and confirm it
 in one line before pushing. Note whether it differs from the default branch — step 6 depends on it.

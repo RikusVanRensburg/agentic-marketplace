@@ -41,17 +41,21 @@ waiting on approval, and end the run.
 Only once the merge is confirmed — by an explicit instruction to merge, or by the user saying it has
 landed. Then, in this order:
 
-1. **`rr-core:stack-down`** — as a *removal*: stop, purge, delete the stack folder. Ports come back,
-   and the stack's `.env` goes with it. Do this **before** touching the worktree: a running stack's
-   processes hold files inside it and would block the delete.
+1. **`rr-core:stack-down`** — invoked as a *removal*, stated explicitly, so the leaf has nothing to
+   ask: stop, purge, delete the stack folder. Which stack: the one whose `rr-stack.json` names this
+   worktree. Ports come back, and the stack's `.env` goes with it. Do this **before** touching the
+   worktree: the stack's processes run out of junctions into this worktree's build outputs and would
+   block the delete. Then remove the `<root>\bin\<branch-slug>` junctions too — they point into a
+   worktree that is about to go, and no other stack can be using them once this one is gone (check
+   the other stacks' `rr-stack.json` before assuming).
 2. **`rr-core:worktree-clean`** — proves the merge by SHA ancestry, deregisters, clears the
    gitignored leftovers, removes the branch in the order that lets `-d` work.
 3. **Close the issues by hand.** Closing keywords fire only on a merge into the default branch, so a
    PR merged anywhere else closes nothing. Check each issue's real state; use the closing comment to
    record what landed and what was carried forward.
 
-The shared `<root>\bin\<branch-slug>` folder and the `timebase/*` images are left alone — other
-stacks use them.
+The `timebase/*` images are left alone — other stacks use them. Other branches' `<root>\bin\<slug>`
+folders are not this run's to touch.
 
 ## 4. Report
 
@@ -67,4 +71,4 @@ stacks use them.
 - [ ] Nothing was merged without an explicit instruction or the user's confirmation.
 - [ ] The stack was removed **before** the worktree, and both were confirmed gone.
 - [ ] Every referenced issue was closed by hand or reported as deliberately left open.
-- [ ] The shared bin folder, the images and every other stack were untouched.
+- [ ] The images, other branches' bin folders and every other stack were untouched.

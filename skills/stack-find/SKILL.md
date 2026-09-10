@@ -15,9 +15,12 @@ stop — that is an answer, not a failure to work around.
 docker ps --format '{{.Names}} | {{.Ports}} | {{.Status}}'
 ```
 
-- The **compose-project prefix** of the container name is the stack name; the segment after it names
-  the host (`<stack>-<host>-1`).
-- Each host container publishes an HTTP/HTTPS pair; the **higher** port of the pair is HTTPS.
+- Container names are `<project>-<service>-1`. The project is the stack id when the stack was
+  brought up with `--project <id>` (what `stack-up` does); otherwise the workspace tool derives
+  `timebase-<workspace name, slugged>` (`ComposeGenerator.DefaultProjectName`). The service is the
+  lower-case host name (`pulse`, `historian`, `collector`, `connector`, `atlas`, `explorer`, `bridge`).
+- Each host container publishes an HTTP/HTTPS pair (`45x1`/`45x2` plus the offset); the **higher**
+  port of the pair is HTTPS. Inside the compose network the hosts still talk on the unshifted ports.
 - A stack does not necessarily run every host — a missing container is a fact to report, not a
   reason to look harder.
 
@@ -40,10 +43,12 @@ The command line is the evidence: `Timebase.<Host>.exe`, or a `dotnet` invocatio
 `Timebase.<Host>.dll`. A listener whose owner is a Docker or WSL relay process is a container from
 step 1, not a host process — never report it as one.
 
-For which host owns which default port, **read the repo rather than remembering**: its port table
-(e.g. an e2e runbook or the Playwright base config), each host's shipped Kestrel endpoints, and the
-root `docker-compose.yml`. Use that only to *label* what you found, never to assert something is
-running.
+For which host owns which default port, **read the repo rather than remembering**: the workspace
+tool's `list` verb prints every component's default pair (`dotnet run --project . -- list` in
+`Timebase.Wizard/tools/Timebase.Wizard.Workspace`; it is `ComponentCatalog.cs`), and
+`docs/e2e-host-runbook.md` §3 carries the same table with the UI dev-server ports. A stack folder's
+`workspace-plan.json` (`<root>\{local|docker}\timebase_*`) states the published ports it was actually
+given. Use all of that only to *label* what you found, never to assert something is running.
 
 ## 3. Confirm it actually answers
 
@@ -73,7 +78,8 @@ State, on one line per resolved target:
 `<host> — <kind: container|host process> — <stack name or process id> — https://localhost:<port>`
 
 Plus the HTTP port where one exists, and whether auth is enabled if that is knowable from what is
-running (a stack's own workspace definition, a host's settings) — the caller usually needs it next.
+running (a stack's `workspace-plan.json` says `auth`; its `rr-stack.json` says which branch and
+worktree it runs) — the caller usually needs both next.
 If several backends are up but the caller named none, report the table and ask which one they want.
 
 ## Done when
