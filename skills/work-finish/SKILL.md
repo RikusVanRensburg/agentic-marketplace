@@ -9,6 +9,10 @@ disable-model-invocation: true
 Three leaves with **two gates in the middle**, so this skill is resumable: run it again after each
 approval and it continues from where the work actually stands.
 
+None of its leaves fork: `ship` gates on the PR target and on the merge, `stack-down` on
+stop-versus-remove, `worktree-clean` on unmerged or unpushed work. Each of those is a question a
+subagent could only have answered by assuming, so they run inline where the user can be asked.
+
 ## 1. Work out where things stand
 
 Before doing anything, establish the state — the same call run twice must not push twice or merge

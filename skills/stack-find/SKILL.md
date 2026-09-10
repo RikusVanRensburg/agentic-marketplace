@@ -1,6 +1,8 @@
 ---
 name: stack-find
-description: Find the Timebase backends that are already running — containers and host processes — and resolve one named host to the URL a client should talk to. Read-only: it never starts, stops or reconfigures anything.
+description: Find the Timebase backends that are already running — containers and host processes — and resolve one named host to the URL a client should talk to. Read-only survey in a forked subagent; it never starts, stops or reconfigures anything, and returns a table.
+context: fork
+agent: Explore
 ---
 
 # Find a running backend
@@ -8,6 +10,11 @@ description: Find the Timebase backends that are already running — containers 
 Report what is **already up**, and resolve the caller's host to one URL. This skill starts nothing,
 stops nothing, and changes no configuration. If what the caller needs is not running, say so and
 stop — that is an answer, not a failure to work around.
+
+It runs forked, on a read-only agent, so the port scans and process listings stay out of the
+caller's context. A fork cannot ask: where §4 would have put a choice to the user, it puts every
+candidate in the returned table and stops, and the caller asks. The host to resolve, if any, arrives
+in the arguments.
 
 ## 1. Containers first — they claim ports that look like host processes
 
@@ -63,11 +70,11 @@ or a plain-HTTP answer on the port you assumed was HTTPS, is worth reporting exa
 
 ## 4. Resolve to one target
 
-If the caller named a host, resolve to exactly one, and **ask rather than pick** when it is
-ambiguous:
+If the caller named a host, resolve to exactly one, and **report every candidate rather than pick**
+when it is ambiguous:
 
 - **Two candidates for the same host** — a container and a host process, or two stacks up at once.
-  List them and ask which.
+  List them both and stop; the caller chooses.
 - **The named stack has no container for that host.** Say so and stop.
 - **Nothing is running for that host.** Report it; do not start anything.
 
@@ -80,7 +87,7 @@ State, on one line per resolved target:
 Plus the HTTP port where one exists, and whether auth is enabled if that is knowable from what is
 running (a stack's `workspace-plan.json` says `auth`; its `rr-stack.json` says which branch and
 worktree it runs) — the caller usually needs both next.
-If several backends are up but the caller named none, report the table and ask which one they want.
+If several backends are up but the caller named none, the table is the answer.
 
 ## Done when
 
@@ -88,5 +95,5 @@ If several backends are up but the caller named none, report the table and ask w
       from host-process reasoning.
 - [ ] Every host process was identified by its command line, not by the port it holds.
 - [ ] Each resolved target was confirmed to answer, with the scheme observed rather than assumed.
-- [ ] Ambiguity was put to the user instead of resolved by guessing.
+- [ ] Ambiguity was returned as a list of candidates instead of resolved by guessing.
 - [ ] Nothing was started, stopped, or reconfigured.

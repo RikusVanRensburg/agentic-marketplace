@@ -32,6 +32,12 @@ Each stack folder's `rr-stack.json` names the branch and worktree it runs; read 
 **More than one stack and none named → list them and ask.** Never guess which stack a verb applies
 to; they are isolated on purpose and someone else may be using one.
 
+**Which leaves fork.** `stack-find`, `stack-up`, `stack-update` and `docker-images` run in a
+subagent and cannot ask, so every decision is made here and passed in their arguments: the stack id,
+the worktree, the root, the target, the ports, the tag, purge or not. Each returns a report block —
+relay it. `stack-down` runs inline, because stop-versus-remove is a question, and this skill puts it
+to the user before invoking the leaf.
+
 ## 2. Two things this skill does differently from `work-start`
 
 - **No worktree is created.** The stack is built from the checkout you are already in, so whatever

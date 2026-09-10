@@ -1,9 +1,22 @@
 ---
 name: stack-update
-description: Roll a running Timebase stack onto newer code — stop it, rebuild what changed, bring it back up on the same options, and re-prove it — keeping its data and client secrets unless a reset is explicitly asked for.
+description: Roll a running Timebase stack onto newer code — stop it, rebuild what changed, bring it back up on the same options, and re-prove it — keeping its data and client secrets unless a purge is stated in the arguments. Runs in a forked subagent and returns a report; name the stack (or the worktree) in the arguments.
+context: fork
+agent: general-purpose
 ---
 
 # Update a running stack
+
+## Runs forked — inputs in, a report out
+
+Builds, restarts and verification are long and noisy, so this runs in a subagent. A fork cannot
+ask, so the two decisions arrive in the arguments or are not made:
+
+- **Which stack** — an id, a folder, or the worktree whose `rr-stack.json` it should match. If that
+  still leaves more than one candidate, the report lists them and stops; nothing is rebuilt.
+- **Whether to purge** — only if the arguments say so. Absent that, data and secrets are kept.
+
+It returns the §7 report block.
 
 Put newer code under a stack that is already up, and prove it still works. **Data and credentials
 survive by default** — wiping them is a separate, explicit request, because it regenerates every
@@ -32,7 +45,8 @@ process — `Get-CimInstance Win32_Process -Filter "ProcessId=<pid from processe
 path under `<bin>\<InstallFolder>\`, and `(Get-Item "<bin>\Atlas").Target` gives the worktree the
 junction points at — then write `rr-stack.json` so the next run does not have to.
 
-More than one stack, and none named by the caller → list them and ask.
+More than one stack, and the arguments do not single one out → list them in the report and stop.
+The caller asks; a fork cannot.
 
 ## 2. Stop before you build
 

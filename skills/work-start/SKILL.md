@@ -39,6 +39,11 @@ default is Docker), wires the Collector, Connector and Atlas through their `/api
 `rr-stack.json`, and proves values resolve. It never imports the stack's CA into the machine store;
 if the user wants a browser login, that is a separate, explicit step after the handover.
 
+**That leaf runs forked.** Hand it everything in the invocation arguments — the worktree path, the
+root, the target, the ports or offset — because it cannot ask once it is running, and it will
+choose and report a free port block if none is given. What comes back is its report block; relay it
+in §4 rather than summarising it.
+
 If it stops on something — a port block in use, a build failure, a content step that cannot be
 confirmed — report that and stop. A half-built stack is worth naming, not working around.
 

@@ -1,9 +1,25 @@
 ---
 name: stack-up
-description: Stand up an isolated Timebase stack from the current branch — local processes by default — with Pulse auth and TLS, the shipped Food & Beverage example wired end to end with no seed, then prove values resolve with quality Good.
+description: Stand up an isolated Timebase stack from the current branch — local processes by default — with Pulse auth and TLS, the shipped Food & Beverage example wired end to end with no seed, then prove values resolve with quality Good. Runs in a forked subagent and returns a report; pass the worktree, root, target and ports in the arguments.
+context: fork
+agent: general-purpose
 ---
 
 # Stand up a stack
+
+## Runs forked — inputs in, a report out
+
+This skill runs in a subagent so its builds, tool output and API traffic never reach the caller's
+context. A fork cannot ask a question, so:
+
+- Everything it needs arrives in the arguments: the worktree to build from (else the current
+  directory's), the root (else `D:\test`), the target (else `local`), the ports or a port offset
+  (else a free block it chooses and reports), an explicit `--bin` when the build is to be skipped
+  (an installed release), a Docker `--image-tag`.
+- It never imports the CA, never asks which stack, never pauses for confirmation. Anything that
+  would have been a question is a line in the report, and the caller decides.
+- It returns the §10 report block — that block is the only thing the caller sees, so it carries
+  everything the next skill needs.
 
 One isolated, disposable stack per invocation. It runs **this branch's** binaries, authenticates
 against its own Pulse, and comes up carrying the shipped Food & Beverage example — the Collector

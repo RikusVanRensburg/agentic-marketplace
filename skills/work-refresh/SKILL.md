@@ -23,6 +23,10 @@ says which worktree the junction points at; then write the file.
 
 ## 2. `rr-core:stack-update`
 
+**Runs forked**, so resolve the stack here first and pass its id (and "no purge") in the arguments —
+the leaf cannot ask which, and lists candidates and stops if the arguments leave more than one.
+Relay its report block in §3.
+
 That leaf stops the stack, rebuilds the changed hosts per csproj (and re-stages a host's SPA when its
 UI changed), brings it back up on the recorded command line without purging — so `.env` stays valid,
 collected history survives, and Atlas recompiles the domain it already had — and re-runs `verify`

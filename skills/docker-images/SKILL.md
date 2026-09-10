@@ -1,12 +1,20 @@
 ---
 name: docker-images
-description: Build Timebase container images locally, tagged so a workspace can actually find them — only the components that are needed, never pushed unless explicitly told to.
+description: Build Timebase container images locally, tagged so a workspace can actually find them — only the components that are needed, never pushed. Runs in a forked subagent and returns the tag and the list built; pass the tag and the components in the arguments.
+context: fork
+agent: general-purpose
 ---
 
 # Build the images
 
 Timebase images are **built from the repository and never published from a dev box**. A workspace
 running `--target docker` consumes images that already exist locally; this skill produces them.
+
+It runs forked — an hour of `docker buildx` output has no business in the caller's context. The
+arguments name the tag (else `version.txt`'s `Release:`) and the components (else the ones a named
+workspace file lists, else all seven) and whether `-no-cache` is wanted. There is no question this
+skill could need to ask: pushing is not a decision it is allowed to make, so an argument asking for
+it is refused in the report. It returns the §4 report.
 
 Each image builds a .NET app *and* a Vite SPA, so budget **5–10 minutes per component**. Build only
 what is actually needed.
@@ -68,8 +76,8 @@ Add `-no-cache` only when a stale layer is actually suspected; it costs the full
 ## 3. Never push by default
 
 Without `-local` these scripts **push to the registry**, multi-arch, which is a release action.
-Push only on an explicit instruction naming the version being released — never as a convenience,
-and never to "make the stack work".
+This skill never pushes: a release is a `build.md` step a person runs, not a stack-setup step, and a
+forked skill has no way to confirm one. An argument asking for a push is reported as refused.
 
 ## 4. Report
 
@@ -84,5 +92,5 @@ State the tag used, which components were built, which were skipped and why, and
 
 - [ ] One tag was chosen for the whole run, and reported as the `--image-tag` to pass.
 - [ ] Only the needed components were built, with the ones skipped named.
-- [ ] `-local` was used; nothing was pushed without an explicit instruction to release.
+- [ ] `-local` was used on every build; nothing was pushed.
 - [ ] `docker images` confirms each expected `timebase/<name>:<tag>` now exists.
