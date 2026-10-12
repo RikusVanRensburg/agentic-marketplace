@@ -1,7 +1,7 @@
 ---
 name: orchestrated-run
 version: 1.0.0
-description: Orchestrate a non-trivial change end-to-end as the main session, dispatching subagents for investigation, design, planning, and implementation, then ONE consolidated code review at the very end. The defining discipline is grill-everything-up-front (exhaustive, architecture-first interrogation before any design), with rr:defending-findings applied to every choice in every stage and injected into every subagent. Use when the user wants to orchestrate a substantial build/rework, says "orchestrate this run", "let's do the full run", "grill it then build it", "you be the orchestrator", or describes a symptom/change and wants it interrogated thoroughly before any code is written — especially after a prior under-specified attempt forced a rework.
+description: Orchestrate a non-trivial change end-to-end as the main session, dispatching subagents for investigation, design, planning, and implementation, then ONE consolidated code review at the very end. The defining discipline is grill-everything-up-front (exhaustive, architecture-first interrogation before any design), with rr-stable:defending-findings applied to every choice in every stage and injected into every subagent. Use when the user wants to orchestrate a substantial build/rework, says "orchestrate this run", "let's do the full run", "grill it then build it", "you be the orchestrator", or describes a symptom/change and wants it interrogated thoroughly before any code is written — especially after a prior under-specified attempt forced a rework.
 ---
 
 # Orchestrated Run
@@ -29,7 +29,7 @@ skill is to never let that happen again: **all questions are raised up front.**
    design — this is the stage that was skimped last time.
 3. **Defending-findings is a standing discipline, not a one-off.** Every load-bearing choice
    in **design, planning, AND implementation** — yours or a subagent's — runs through
-   `rr:defending-findings`: state it as a falsifiable claim, name the calibration class,
+   `rr-stable:defending-findings`: state it as a falsifiable claim, name the calibration class,
    build the positive case, attack it, cite surviving evidence inline. Guilty until proven
    innocent. Never let a choice survive on assertion alone.
 4. **Every dispatched subagent carries the defending-findings mindset.** Inject the `DEFEND`
@@ -103,7 +103,7 @@ user's choice.
   rework this skill exists to prevent.
 - About to start design/plan/implement before the user has described the seed — STOP.
 - About to make a design/plan/implementation choice without defending it — STOP. Run
-  `rr:defending-findings` on it.
+  `rr-stable:defending-findings` on it.
 - About to dispatch a subagent without the DEFEND preamble — STOP.
 - About to review per task instead of once at the end — STOP. Single consolidated review is
   built into the shipped workflow's Final Review stage.

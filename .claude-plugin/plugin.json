@@ -1,7 +1,7 @@
 {
-  "name": "rr",
+  "name": "rr-stable",
   "description": "RR's personal workflows and skills",
-  "version": "1.10.1",
+  "version": "1.11.0",
   "author": {
     "name": "RR"
   },

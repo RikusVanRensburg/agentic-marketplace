@@ -1,7 +1,7 @@
 export const meta = {
   name: 'orchestrated-run',
   description: 'Implement every task in a plan: dependency-ordered dev (TDD, escalating model ladder) -> independent QA (opus) -> serialized verified git merge, then a final consolidated code review — circuit breaker and structured blockers throughout',
-  whenToUse: 'Launched by rr:orchestrated-run after its interactive pre-flight (Stage 5). Static script — never edited per run; all per-run data arrives via args: { planPath, source, tasks, ladder?, integrated?, answers?, finalReviewDone? }.',
+  whenToUse: 'Launched by rr-stable:orchestrated-run after its interactive pre-flight (Stage 5). Static script — never edited per run; all per-run data arrives via args: { planPath, source, tasks, ladder?, integrated?, answers?, finalReviewDone? }.',
   phases: [
     { title: 'Build', detail: 'dev (TDD, worktree-isolated, ladder model) + independent QA per task' },
     { title: 'Integrate', detail: 'serialized git merge, post-merge verify — in dependency order' },

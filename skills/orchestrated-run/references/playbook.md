@@ -43,7 +43,7 @@ design spec (no separate ledger subfolder).
 Synthesize the resolved interrogation into a design spec at
 `<ledger>/specs/<date>-<slug>-design.md`. If the design space is wide, dispatch design
 subagents to explore alternatives in parallel; otherwise synthesize directly. Either way,
-**defend every load-bearing choice** per `rr:defending-findings` — alternatives considered,
+**defend every load-bearing choice** per `rr-stable:defending-findings` — alternatives considered,
 why this one survives, evidence cited inline.
 
 Spec sections: problem & goals/non-goals · resolved architecture (components, contracts,
