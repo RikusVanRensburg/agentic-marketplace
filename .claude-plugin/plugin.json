@@ -1,0 +1,8 @@
+{
+  "name": "rr-mods",
+  "version": "0.1.0",
+  "description": "RR's personal Claude Code mods",
+  "author": { "name": "RR" },
+  "repository": "https://github.com/flow-software/flow-agentic-resources",
+  "license": "MIT"
+}
