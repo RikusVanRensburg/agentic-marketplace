@@ -234,3 +234,14 @@ test('dev commits failing tests before the code, and QA checks that order where 
   expect(SYSTEM.dev).toMatch(/commit the failing tests on their own first/)
   expect(SYSTEM.qa).toMatch(/committed before the code that makes them pass; never check out another commit/)
 })
+
+test('integrating a slice that already merged, its branch since deleted, counts as merged', async () => {
+  const git = fakeGit([
+    [/rev-parse --verify --quiet HEAD/, { stdout: 'head\n' }],
+    [/rev-parse --verify --quiet feat\/x/, { exitCode: 1 }],
+    [/log --merges/, { stdout: 'm1\tMerge feat/y (y Other)\nm2\tMerge feat/x (x Add x)\n' }],
+  ])
+  const merge = await integrate(git.run, async () => ({ exitCode: 0, tail: '' }), 'D:/r/i', 'feat/x', 'Merge feat/x (x Add x)', { build: 'b', test: 't' })
+  expect(merge).toEqual({ isMerged: true, commit: 'm2' })
+  expect(git.calls.some(c => c.includes('merge --no-ff'))).toBe(false)
+})

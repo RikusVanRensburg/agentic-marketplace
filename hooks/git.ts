@@ -94,7 +94,12 @@ export async function integrate(run: Run, shell: Shell, integration: string, bra
   const before = await headOf(run, integration)
   if (!before) return { isMerged: false, failure: 'cannot read the integration HEAD' }
 
-  // Already in: an earlier attempt merged and verified before the module went away.
+  // Already in: an earlier attempt merged before the module went away, maybe since followed by
+  // the slice branch's removal. The merge commit's subject is ours, so the history says so.
+  const merges = await run(['git', 'log', '--merges', '--format=%H%x09%s', '-200'], { cwd: integration })
+  const prior = merges.stdout.split('\n').find(line => line.split('\t')[1]?.startsWith(`Merge ${branch} (`))
+  if (prior) return { isMerged: true, commit: prior.split('\t')[0] as string }
+
   const tip = await headOf(run, integration, branch)
   if (tip && (await run(['git', 'merge-base', '--is-ancestor', tip, before], { cwd: integration })).exitCode === 0) {
     return { isMerged: true, commit: before }

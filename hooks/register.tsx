@@ -21,6 +21,10 @@ import { bar, fmtTime, fmtTokens, taskNameOf, viewOf } from './view'
 const PLUGIN = 'orchestrator'
 const RUN_KEY = 'run'
 const OWNER_KEY = 'owner'
+// Which load of the module drives the run. A copy left over from before a reload still has
+// work in flight; its saves are dropped, so it cannot write over the run (CLI 2.1.295).
+const GENERATION_KEY = 'generation'
+const GENERATION = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const OWNED_KEY = 'owned'
 const PANE = 'orchestrator-run'
 
@@ -194,6 +198,10 @@ function noticeWaiting($: EngineInterface): void {
 }
 
 async function save($: EngineInterface, state: RunState): Promise<void> {
+  if ((await $.store.get(GENERATION_KEY)) !== GENERATION) {
+    isOwner = false
+    return
+  }
   current = state
   await $.store.set(RUN_KEY, state)
   await redraw($)
@@ -589,6 +597,7 @@ async function launch($: EngineInterface, input: unknown): Promise<string> {
   const begun = start(checked.plan, config, closed, id, Date.now())
   isOwner = true
   await $.store.set(OWNER_KEY, await $.session.id())
+  await $.store.set(GENERATION_KEY, GENERATION)
   await save($, begun.state)
   perform($, begun.effects)
   await flushSpawns($)
@@ -653,6 +662,7 @@ export const register: Register = (on, opts) => {
     const config = await configNow($)
     current = ((await $.store.get(RUN_KEY)) as RunState | undefined) ?? null
     isOwner = !!current && (await $.store.get(OWNER_KEY)) === (await $.session.id())
+    if (isOwner) await $.store.set(GENERATION_KEY, GENERATION)
 
     if (config) await registerTypes($, config)
     if (current) await registerTypes($, current.config)
@@ -781,6 +791,7 @@ export const register: Register = (on, opts) => {
       if (!current || current.status !== 'running') return { text: 'No running orchestrator run.' }
       isOwner = true
       await $.store.set(OWNER_KEY, await $.session.id())
+      await $.store.set(GENERATION_KEY, GENERATION)
       await resume($)
       return { text: `This session now drives run ${current.id}.` }
     }
