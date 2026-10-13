@@ -29,6 +29,15 @@ async function ctxOf($: EngineInterface, caller: string): Promise<Ctx> {
   return {
     run,
     exists: path => $.fs.exists(path),
+    entries: async path => {
+      if (!(await $.fs.exists(path))) return null
+
+      try {
+        return (await $.fs.list(path)).length
+      } catch {
+        return 1
+      }
+    },
     complete: async prompt => {
       const answer = await $.model.complete({ model: 'haiku', prompt, maxTokens: 200 })
       return answer.isAnswered ? answer.text : null

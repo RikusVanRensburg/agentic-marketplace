@@ -19,7 +19,7 @@ It knows nothing about orchestration. Another mod can call it through `$.worktre
 | `/wt new <type> <slug> [--base <branch>]` | Creates `<type>/<initials>/<slug>` at `<repo>/<branch>`, cut from the branch you are on |
 | `/wt new <branch> [--base <branch>]` | The same with a whole branch name |
 | `/wt ship [<branch>] [--base <b>] [--title <t>] [--ready]` | Pushes and opens a draft PR (`--ready` for a normal one) |
-| `/wt clean <branch>` | Fast-forwards the base, removes the worktree, `branch -d`, deletes `origin/<branch>` |
+| `/wt clean <branch>` | Fast-forwards the base, removes the worktree and the empty folders above it, `branch -d`, deletes `origin/<branch>` |
 | `/wt sweep` | Offers housekeeping for every merged branch the mod created |
 | `/wt check` | Asks GitHub now whether those PRs merged |
 | `/wt status` | The branches the mod created in this repo |
@@ -70,8 +70,16 @@ in `types/index.d.ts`.
 Write each call out in full, `await $.worktree.create({ type: 'feat', slug: 'x' })`. The engine
 refuses to load a module that binds the noun to a variable (`const w = $.worktree`).
 
+## Empty folders
+
+After the worktree goes, housekeeping removes its folder if git left it (Windows refuses to delete
+a folder a process still holds; git deregisters the worktree anyway), then walks up the folders
+the branch name made (`feat/RVR/`, then `feat/`), removing each while it is empty. The first folder
+that still holds anything, such as another session's worktree, stops the walk, and `<repo>` itself
+is never removed. A folder still held is left behind and named in the result; the branch is still
+deleted.
+
 ## Known limits
 
-- Housekeeping leaves empty parent folders behind (`<repo>/feat/<initials>/`).
 - After a squash merge whose `origin/<branch>` ref is already gone, `branch -d` refuses; the mod
   stops and says so rather than using `-D`.

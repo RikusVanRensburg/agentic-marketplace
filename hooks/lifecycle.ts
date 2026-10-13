@@ -29,7 +29,7 @@ import {
   type Repo,
   type Run,
 } from './git'
-import { isInside } from './paths'
+import { isInside, normalize, samePath } from './paths'
 import {
   FALLBACK_RULE,
   PROSE_FILES,
@@ -52,6 +52,8 @@ export const PLUGIN = 'worktree-lifecycle'
 export type Ctx = {
   run: Run
   exists: (path: string) => Promise<boolean>
+  // How many entries a folder holds; null when it is gone. A folder it cannot read counts as full.
+  entries: (path: string) => Promise<number | null>
   // One question to a small model; null when it could not answer.
   complete: (prompt: string) => Promise<string | null>
   isWindows: boolean
@@ -469,11 +471,16 @@ export async function runClean(ctx: Ctx, plan: WorktreeCleanPlan): Promise<Workt
   if (plan.path !== null) {
     const removed = await ctx.run(['git', '-C', root, 'worktree', 'remove', plan.path], { timeoutMs: 120_000 })
 
-    if (removed.exitCode !== 0) {
+    if (removed.exitCode === 0) {
+      done.push(`removed ${plan.path}`)
+    } else if ((await worktrees(ctx.run, root)).some(row => samePath(row.path, plan.path ?? '', ctx.isWindows))) {
       return fail(`${done.join(', ')}; then git worktree remove failed: ${firstLine(removed)}. The branch is kept.`)
+    } else {
+      // Git deregistered it and deleted what it could; the folder itself was held.
+      done.push(`deregistered ${plan.path} (${firstLine(removed)})`)
     }
 
-    done.push(`removed ${plan.path}`)
+    done.push(...(await removeEmptyFolders(ctx, plan.path, root)))
   }
 
   const deleted = await ctx.run(['git', '-C', root, 'branch', '-d', plan.branch])
@@ -490,4 +497,36 @@ export async function runClean(ctx: Ctx, plan: WorktreeCleanPlan): Promise<Workt
   }
 
   return { isDone: true, text: `Housekept ${plan.branch}: ${done.join(', ')}.` }
+}
+
+// The worktree's own folder, then each parent its branch name made, removed only while empty
+// and never `<repo>` itself. The first folder that still holds anything stops the walk, and
+// `rmdir` refuses a folder that is not empty, so another worktree is never touched.
+export async function removeEmptyFolders(ctx: Ctx, start: string, root: string): Promise<string[]> {
+  const notes: string[] = []
+  const top = normalize(root, ctx.isWindows)
+  let folder = normalize(start, ctx.isWindows)
+
+  while (folder.includes('/') && isInside(folder, top, ctx.isWindows) && !samePath(folder, top, ctx.isWindows)) {
+    const count = await ctx.entries(folder)
+
+    if (count !== null && count > 0) {
+      break
+    }
+
+    if (count === 0) {
+      const removed = await ctx.run(ctx.isWindows ? ['cmd', '/c', 'rmdir', folder.replace(/\//g, '\\')] : ['rmdir', folder])
+
+      if (removed.exitCode !== 0) {
+        notes.push(`left ${folder} behind (${firstLine(removed)})`)
+        break
+      }
+
+      notes.push(`removed the empty folder ${folder}`)
+    }
+
+    folder = folder.slice(0, folder.lastIndexOf('/'))
+  }
+
+  return notes
 }
