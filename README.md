@@ -67,6 +67,9 @@ List `worktree-lifecycle` under `dependencies` in your `plugin.json` and call `$
 `{ isDone: false, reason }`. Hook the `worktree.merged` event to hear about merges. The types are
 in `types/index.d.ts`.
 
+Write each call out in full, `await $.worktree.create({ type: 'feat', slug: 'x' })`. The engine
+refuses to load a module that binds the noun to a variable (`const w = $.worktree`).
+
 ## Known limits
 
 - Housekeeping leaves empty parent folders behind (`<repo>/feat/<initials>/`).
