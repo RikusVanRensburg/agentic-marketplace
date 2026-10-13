@@ -23,6 +23,7 @@ test('the deny-list refuses pushes, tracker writes, branch and worktree changes,
     'git worktree remove ../x',
     'git checkout main',
     'git checkout -b side',
+    'git checkout 441b8ff --',
     'git switch -c other',
     'git stash',
     'git reset --hard origin/main',
@@ -231,5 +232,5 @@ test('QA is told history is not evidence, and an answer never overrides criteria
 
 test('dev commits failing tests before the code, and QA checks that order where behaviour changes', () => {
   expect(SYSTEM.dev).toMatch(/commit the failing tests on their own first/)
-  expect(SYSTEM.qa).toMatch(/tests committed before the code that makes them pass/)
+  expect(SYSTEM.qa).toMatch(/committed before the code that makes them pass; never check out another commit/)
 })

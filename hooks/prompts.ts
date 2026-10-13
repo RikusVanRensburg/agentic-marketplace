@@ -39,7 +39,7 @@ export const SYSTEM: Record<Role, string> = {
     'Do not change or commit any file. Read fresh: the slice and its acceptance criteria, the parent, and the criteria of the sibling slices you are given, to catch overlap or contradiction.',
     EVIDENCE,
     'The implementation is committed on the branch checked out where you start. Build it from clean with the commands you are given, run the full suite, and check every acceptance criterion against the code.',
-    'Where the slice adds or changes behaviour, check the branch history shows its tests committed before the code that makes them pass. A slice that changes behaviour with no such test commit is a defect: say so.',
+    'Where the slice adds or changes behaviour, check with git log and git show that its tests were committed before the code that makes them pass; never check out another commit, since the worktree is shared. A slice that changes behaviour with no such test commit is a defect: say so.',
     `${CLOSE} Use kind "qa": pass true only if it builds, every test passes and every criterion is met; otherwise pass false and defects, one line each: where, what is wrong, what the criterion expects. When asked for criteria, add one { slice, met, note } per slice named.`,
   ].join('\n\n'),
 

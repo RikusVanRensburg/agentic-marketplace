@@ -68,6 +68,11 @@ const pendingSpawns: Extract<Effect, { kind: 'spawn' }>[] = []
 let isFlushing = false
 // Hand-backs of the mod's agents answered by the mod instead of reaching the session.
 let handbacksHeld = 0
+// Every agent this module spawned or resumed, kept past its turn: a hand-back can arrive after
+// the agent's turn ended and its ref left the run.
+const ownAgents = new Set<string>()
+// What the engine answers a delivered hand-back; anything else and the agent retries it.
+const HANDBACK_DONE = JSON.stringify({ success: true, message: 'Report delivered to the orchestrator.' })
 // When the oldest waiting spawn was queued, and whether the person was told it is waiting.
 let queuedSince: number | null = null
 let isWaitShown = false
@@ -388,6 +393,7 @@ async function spawnAgent($: EngineInterface, state: RunState, effect: Extract<E
   if (spawned.deny !== undefined || !spawned.agentId) {
     return enqueue($, { kind: 'spawn-failed', key: effect.key, reason: spawned.deny ?? 'no agent id' })
   }
+  ownAgents.add(spawned.agentId)
   enqueue($, { kind: 'spawned', key: effect.key, agentId: spawned.agentId })
 }
 
@@ -594,17 +600,34 @@ async function launch($: EngineInterface, input: unknown): Promise<string> {
 // were running in the old module go again.
 async function resume($: EngineInterface): Promise<void> {
   if (!current || current.status !== 'running') return
+  // A reload must not re-run agents that are still working: only one the list shows ended is
+  // lost now. One the list does not show gets another look later, unless its turn ends first.
+  const ENDED = ['completed', 'failed', 'killed']
   const listed = await $.agent.list()
-  const alive = new Set(listed.filter(a => a.status === 'running' || a.status === 'pending' || a.status === 'waiting').map(a => a.id))
+  const unseen: string[] = []
   for (const ref of Object.values(current.agents)) {
+    if (ref.agentId) ownAgents.add(ref.agentId)
+    const row = ref.agentId ? listed.find(a => a.id === ref.agentId) : undefined
     if (!ref.agentId) enqueue($, { kind: 'spawn-failed', key: ref.key, reason: 'the module reloaded before the agent started' })
-    else if (!alive.has(ref.agentId)) enqueue($, { kind: 'ended', agentId: ref.agentId, reason: 'lost' })
+    else if (row && ENDED.includes(row.status)) enqueue($, { kind: 'ended', agentId: ref.agentId, reason: 'lost' })
+    else if (!row) unseen.push(ref.agentId)
   }
+  if (unseen.length) $.clock.after(120_000, () => void recheckUnseen($, unseen))
   perform($, inFlight(current))
   await openPane($)
 }
 
-const usageOf = (u: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | undefined): Usage | undefined =>
+async function recheckUnseen($: EngineInterface, ids: string[]): Promise<void> {
+  if (!current) return
+  const listed = await $.agent.list()
+  for (const id of ids) {
+    const stillOurs = Object.values(current.agents).some(a => a.agentId === id)
+    const row = listed.find(a => a.id === id)
+    if (stillOurs && (!row || ['completed', 'failed', 'killed'].includes(row.status))) enqueue($, { kind: 'ended', agentId: id, reason: 'lost' })
+  }
+}
+
+const usageOf = (u:{ input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | undefined): Usage | undefined =>
   u ? { input: u.input_tokens ?? 0, output: u.output_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0 } : undefined
 
 // A stray `isolation: 'worktree'` agent lands inside the layout: `<repo>/<name>`, branch `name`.
@@ -697,14 +720,14 @@ export const register: Register = (on, opts) => {
   // Whatever the mode or the person's allow rules, the mod's agents do not push, write to the
   // tracker, touch branches or worktrees, or leave their worktree.
   on('tool.call', async ($, e, next) => {
-    const ref = agentRef(e.agentId)
-    if (!ref || !current) return next(e)
-    if (e.tool === 'SubagentHandback') {
+    if (e.tool === 'SubagentHandback' && e.agentId && ownAgents.has(e.agentId)) {
       // The report tool already carries the result; the hand-back would only land in the
       // session as one more message per agent.
       handbacksHeld += 1
-      return { result: 'The orchestrator already has your report. Your turn is done.' }
+      return { result: HANDBACK_DONE }
     }
+    const ref = agentRef(e.agentId)
+    if (!ref || !current) return next(e)
     const worktree = worktreeOf(current, ref.slice, ref.repo)
     const why = denyOf(e.tool, e as unknown as Record<string, unknown>, worktree)
     if (why) return { deny: `orchestrator: ${why}` }
@@ -712,6 +735,7 @@ export const register: Register = (on, opts) => {
     await record($, ref.slice ?? `final:${ref.repo}`, ref.agentId ?? '', taskNameOf(ref), `${e.tool} ${summaryOf(e as unknown as Record<string, unknown>, worktree)}`)
     return next(e)
   }).catch(($, e, next) => {
+    if (e.tool === 'SubagentHandback' && e.agentId && ownAgents.has(e.agentId)) return { result: HANDBACK_DONE }
     const ref = agentRef(e.agentId)
     if (!ref || !current) return next(e)
     if (next.error.kind === 're-entry') {
