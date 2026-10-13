@@ -206,13 +206,7 @@ const guard = async ($: EngineInterface, c: Config, path: string) => {
 export const register: Register = (on, options) => {
   const c = configOf(options)
 
-  // tree.tsx holds the plugin's one unmatched session.start, and a module may hold only
-  // one, so drive's is split on isInteractive: the two halves cover every session once.
-  on('session.start', { isInteractive: true }, async ($, e, next) => {
-    await start($, c)
-    return next(e)
-  })
-  on('session.start', { isInteractive: false }, async ($, e, next) => {
+  on('session.start', async ($, e, next) => {
     await start($, c)
     return next(e)
   })
