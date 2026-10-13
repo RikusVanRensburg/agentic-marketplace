@@ -1,4 +1,7 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
+
+import type { FinalRow, SliceRow } from '../types'
 
 import type { Config, Rung } from './config'
 import { configOf, rungLabel } from './config'
@@ -9,12 +12,17 @@ import { checkedOutAt, cleanForQa, createSlice, devState, integrate, isLayoutPat
 import { denyOf } from './guards'
 import type { Closed, Plan } from './plan'
 import { reconcileProblems, validatePlan } from './plan'
-import { REPORT_TOOL, SYSTEM, TOOLS, taskOf, typeName } from './prompts'
+import { SYSTEM, TOOLS, taskOf, typeName } from './prompts'
+import { GLYPH, bar, fmtTime, fmtTokens, viewOf } from './view'
 
 const PLUGIN = 'orchestrator'
 const RUN_KEY = 'run'
 const OWNER_KEY = 'owner'
 const OWNED_KEY = 'owned'
+const PANE = 'orchestrator-run'
+
+const viewAtom = atom({ plugin: 'orchestrator', key: 'view' } as const, null)
+const uiAtom = atom({ plugin: 'orchestrator', key: 'ui' } as const, { expanded: null, isDoneCollapsed: true, isBandHidden: false })
 
 type Owned = { run: string; repo: string; branch: string; path: string; kind: 'integration' | 'slice' }
 
@@ -22,6 +30,8 @@ type Owned = { run: string; repo: string; branch: string; path: string; kind: 'i
 let current: RunState | null = null
 let isOwner = false
 let options: Record<string, unknown> = {}
+// Redraws the elapsed times while a run is going.
+let ticker: { cancel: () => void } | null = null
 // Events apply one at a time, in arrival order.
 let chain: Promise<void> = Promise.resolve()
 // Each spawn's working directory by its description, for the agent.spawn hook: the engine
@@ -113,7 +123,18 @@ async function apply($: EngineInterface, event: Event): Promise<void> {
 async function save($: EngineInterface, state: RunState): Promise<void> {
   current = state
   await $.store.set(RUN_KEY, state)
+  await redraw($)
+}
+
+async function redraw($: EngineInterface): Promise<void> {
   showStatus($)
+  const state = current
+  await update($, viewAtom, () => (state ? viewOf(state, Date.now()) : null))
+  if (state?.status === 'running' && !ticker) ticker = $.clock.every(5000, () => void redraw($))
+  if (state?.status !== 'running' && ticker) {
+    ticker.cancel()
+    ticker = null
+  }
 }
 
 // Effects run outside the dispatch that produced them, one batch in order: a batch's effects
@@ -432,6 +453,7 @@ async function launch($: EngineInterface, input: unknown): Promise<string> {
   await $.store.set(OWNER_KEY, await $.session.id())
   await save($, begun.state)
   perform($, begun.effects)
+  void $.ui.open({ id: PANE, title: 'Orchestrator' })
   return `Launched run ${id}: ${checked.plan.slices.length} slices${closed.completed.length ? `, ${closed.completed.join(', ')} already landed` : ''}. Blockers will reach this session as they happen.`
 }
 
@@ -506,13 +528,13 @@ export const register: Register = (on, opts) => {
       },
       isDeferred: false,
     })
-    await $.command.register({ name: 'orchestrator', description: 'Orchestrator run: status, retry <at> <answer>, abort, take' })
+    await $.command.register({ name: 'orchestrator', description: 'Orchestrator run: status, pane, retry <at> <answer>, abort, take' })
 
     if (current?.status === 'running') {
       if (isOwner) await resume($)
       else $.ui.status(`orch ${current.plan.slug}: running in another session (/orchestrator take to drive it here)`)
     }
-    showStatus($)
+    await redraw($)
     return started
   })
 
@@ -577,6 +599,10 @@ export const register: Register = (on, opts) => {
       return { text: `This session now drives run ${current.id}.` }
     }
     if (!current) return { text: 'No orchestrator run.' }
+    if (verb === 'pane') {
+      await $.ui.open({ id: PANE, title: 'Orchestrator' })
+      return { text: 'Orchestrator pane opened.' }
+    }
     if (verb === 'abort') {
       enqueue($, { kind: 'abort' })
       return { text: `Run ${current.id} stops starting work. Agents already running finish on their own; their worktrees stay.` }
@@ -587,5 +613,156 @@ export const register: Register = (on, opts) => {
       return { text: `${at} goes again with your answer.` }
     }
     return { text: statusText(current) }
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const view = await read($, viewAtom)
+    const paneUi = await read($, uiAtom)
+    if (!view) return <Text dimColor>No orchestrator run.</Text>
+
+    const cols = Math.max(30, e.props.bodyColumns || 60)
+    const barW = Math.max(4, Math.min(12, cols - 48))
+    const toggle = (id: string) => update($, uiAtom, prev => ({ ...prev, expanded: prev.expanded === id ? null : id }))
+    const section = (key: string, label: string, count: number) => (
+      <Text key={key} dimColor>
+        {label} · {count}
+      </Text>
+    )
+    const details = (lines: string[], key: string) => (
+      <Box key={key} flexDirection="column">
+        {lines.map((line, i) => (
+          <Text key={`${key}-${i}`} dimColor wrap="truncate-end">
+            {'    '}
+            {line}
+          </Text>
+        ))}
+      </Box>
+    )
+
+    const sliceRow = (r: SliceRow) => {
+      const glyph = r.phase === 'halted' ? GLYPH.halted : GLYPH[r.group]
+      const color = r.group === 'blocked' ? 'red' : r.group === 'done' ? 'green' : r.group === 'build' ? 'yellow' : undefined
+      const what =
+        r.group === 'waiting' ? (r.phase === 'halted' ? r.blocker ?? 'halted' : r.waitingOn.length ? `after ${r.waitingOn.join(', ')}` : 'ready')
+        : r.group === 'done' ? `${r.phase}${r.commit ? ` ${r.commit.slice(0, 7)}` : ''}`
+        : r.group === 'integrate' ? (r.phase === 'integrating' ? 'merging · build · suite' : 'queued for merge')
+        : r.group === 'blocked' ? r.blocker ?? 'blocked'
+        : `${r.role ?? ''} ${r.rung ?? ''}`
+      const meta = [`r${r.round}/${r.rungs}`, r.mode, r.runningMs !== null ? fmtTime(r.runningMs) : '', r.tokens ? fmtTokens(r.tokens) : ''].filter(Boolean).join(' · ')
+      const isOpen = paneUi.expanded === r.id
+      const why = [...(r.worktree ? [`worktree kept: ${r.worktree}`] : []), ...r.defects.slice(0, 5), `answer with /orchestrator retry ${r.id} <answer>`]
+      return (
+        <Box key={r.id} flexDirection="column" marginBottom={1}>
+          <Box flexDirection="row" gap={1}>
+            <Text color={color}>{glyph}</Text>
+            <Button key={`row-${r.id}`} label={`${r.id} ${r.title}`} plain onPress={() => toggle(r.id)} />
+            <Text dimColor wrap="truncate-end">
+              {what}
+            </Text>
+          </Box>
+          <Text dimColor wrap="truncate-end">
+            {'  '}
+            {r.group === 'waiting' || r.group === 'blocked' ? '' : <Text color={color}>{bar(r.stage, 4)} </Text>}
+            {meta}
+          </Text>
+          {r.group === 'blocked' && details(why, `${r.id}-why`)}
+          {isOpen && details([`branch ${r.branch}`, ...(r.worktree ? [`worktree ${r.worktree}`] : []), ...r.history], `${r.id}-more`)}
+        </Box>
+      )
+    }
+
+    const finalRow = (f: FinalRow) => {
+      const color = f.phase === 'pass' ? 'green' : f.phase === 'blocked' ? 'red' : f.phase === 'judging' || f.phase === 'fixing' ? 'yellow' : undefined
+      const glyph = f.phase === 'pass' ? '✓' : f.phase === 'blocked' ? '✗' : f.phase === 'idle' || f.phase === 'skipped' ? '◷' : '●'
+      const isOpen = paneUi.expanded === `final:${f.repo}` || f.phase === 'blocked'
+      return (
+        <Box key={`final-${f.repo}`} flexDirection="column" marginBottom={1}>
+          <Box flexDirection="row" gap={1}>
+            <Text color={color}>{glyph}</Text>
+            <Button key={`final-${f.repo}`} label={`final QA ${f.repo}`} plain onPress={() => toggle(`final:${f.repo}`)} />
+            <Text dimColor>
+              {f.phase}
+              {f.round ? ` · remediation r${f.round}` : ''}
+              {f.findings.length ? ` · ${f.findings.length} findings` : ''}
+            </Text>
+          </Box>
+          {isOpen && details([...f.findings.slice(0, 8), ...f.history], `final-${f.repo}-more`)}
+        </Box>
+      )
+    }
+
+    const by = (group: string) => view.rows.filter(r => r.group === group)
+    const done = by('done')
+    const groups: [string, string][] = [
+      ['blocked', 'Blocked'],
+      ['build', 'Build'],
+      ['integrate', 'Integrate'],
+      ['waiting', 'Waiting'],
+    ]
+
+    return (
+      <Box flexDirection="column">
+        <Text bold wrap="truncate-end">
+          {view.title} · {view.status}
+        </Text>
+        <Text wrap="truncate-end">
+          <Text color="green">{bar(Math.round((view.merged / Math.max(1, view.slices)) * barW), barW)}</Text>
+          <Text dimColor>
+            {' '}
+            {view.merged}/{view.slices} merged{view.blocked ? ` · ${view.blocked} blocked` : ''} · {view.agents} agents · {fmtTokens(view.tokens)} tokens ·{' '}
+            {fmtTime(view.durationMs)}
+          </Text>
+        </Text>
+        <Text dimColor wrap="truncate-end">
+          {view.branches.join(' · ')}
+        </Text>
+        <Box flexDirection="column" marginTop={1}>
+          {groups.map(([group, label]) => {
+            const rows = by(group)
+            return rows.length ? (
+              <Box key={group} flexDirection="column">
+                {section(`h-${group}`, label, rows.length)}
+                {rows.map(sliceRow)}
+              </Box>
+            ) : null
+          })}
+          {done.length > 0 && (
+            <Button
+              key="done"
+              label={`${paneUi.isDoneCollapsed ? '▸' : '▾'} Merged · ${done.length}`}
+              plain
+              onPress={() => update($, uiAtom, prev => ({ ...prev, isDoneCollapsed: !prev.isDoneCollapsed }))}
+            />
+          )}
+          {!paneUi.isDoneCollapsed && done.map(sliceRow)}
+          {section('h-final', 'Final QA', view.finals.length)}
+          {view.finals.map(finalRow)}
+        </Box>
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const view = await read($, viewAtom)
+    const paneUi = await read($, uiAtom)
+    if (!view || paneUi.isBandHidden || e.props.hasSurvey) return next(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const width = Math.max(6, Math.min(30, (e.props.bodyColumns || 80) - 60))
+    const color = view.blocked ? 'red' : view.status === 'running' ? 'yellow' : 'green'
+    return (
+      <Box flexDirection="row" gap={2}>
+        <Text color={color}>●</Text>
+        <Text wrap="truncate-end">{view.title}</Text>
+        <Text color="green">{bar(Math.round((view.merged / Math.max(1, view.slices)) * width), width)}</Text>
+        <Text bold>
+          {view.merged}/{view.slices}
+        </Text>
+        {view.blocked ? <Text color="red">{view.blocked} blocked</Text> : null}
+        <Text dimColor>{view.status === 'running' ? `×${view.agents}` : view.status}</Text>
+        <Button key="orch-open" label="pane" plain onPress={() => void $.ui.open({ id: PANE, title: 'Orchestrator' })} />
+        <Button key="orch-hide" label="✕" plain role="dismiss" onPress={() => update($, uiAtom, prev => ({ ...prev, isBandHidden: true }))} />
+      </Box>
+    )
   })
 }

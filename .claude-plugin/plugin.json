@@ -5,6 +5,7 @@
   "author": { "name": "RR" },
   "repository": "https://github.com/flow-software/flow-agentic-resources",
   "license": "MIT",
+  "types": "./types/index.d.ts",
   "dependencies": ["worktree-lifecycle"],
   "userConfig": {
     "sonnetFirst": {
