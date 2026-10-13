@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { configOf, parseLadder, parseRung } from '../hooks/config'
-import { briefProblems, clashOf, cycleOf, integrationBranchOf, reconcileProblems, sliceBranchOf, validatePlan } from '../hooks/plan'
+import { briefProblems, clashOf, cycleOf, integrationBranchOf, overlapProblems, reconcileProblems, sliceBranchOf, validatePlan } from '../hooks/plan'
 
 import { BRIEF, config, plan } from './fixture'
 
@@ -99,4 +99,12 @@ test('a slice closed without completing is fine alone, refused when something de
   expect(reconcileProblems(p, { completed: [], other: ['109'] })).toEqual([])
   expect(reconcileProblems(p, { completed: [], other: ['107'] })).toEqual(['slice 108 depends on 107, which is closed without being completed'])
   expect(reconcileProblems(p, { completed: ['107'], other: [] })).toEqual([])
+})
+
+test('unordered slices whose briefs share files are named; an edge between them clears it', () => {
+  const p = plan()
+  const overlapping = { ...p, slices: [p.slices[0]!, { ...p.slices[2]!, mode: 'haiku-first' as const, brief: BRIEF }] }
+  expect(overlapProblems(overlapping)).toEqual(['slices 107 and 109 both change calc.py, test_calc.py with no dependency between them'.replace('calc.py, test_calc.py', 'src/Payments/PaymentDto.cs')])
+  const ordered = { ...overlapping, slices: [overlapping.slices[0]!, { ...overlapping.slices[1]!, deps: ['107'] }] }
+  expect(overlapProblems(ordered)).toEqual([])
 })

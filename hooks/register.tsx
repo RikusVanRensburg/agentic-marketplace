@@ -11,7 +11,7 @@ import type { Run, Shell } from './git'
 import { checkedOutAt, cleanForQa, createSlice, devState, integrate, isLayoutPath, removeSlice, resetSlice, tail } from './git'
 import { denyOf } from './guards'
 import type { Closed, Plan } from './plan'
-import { reconcileProblems, validatePlan } from './plan'
+import { overlapProblems, reconcileProblems, validatePlan } from './plan'
 import { SYSTEM, TOOLS, taskOf, typeName } from './prompts'
 import { BAND_H, HEADER_H, LINE_H, PROGRESS_H, activitySvg, bandCounts, bandLabel, bandSvg, blockerSvg, finalLine, headerSvg, mergedLine, progressSvg, waitingLine } from './draw'
 import { bar, fmtTime, fmtTokens, taskNameOf, viewOf } from './view'
@@ -95,9 +95,11 @@ async function configNow($: EngineInterface): Promise<Config | null> {
   return result.config
 }
 
-function rungsOf(config: Config): { role: 'dev' | 'qa' | 'final-qa' | 'remediate'; rung: Rung }[] {
+function rungsOf(config: Config): { role: 'dev' | 'qa' | 'final-qa' | 'remediate' | 'resolve'; rung: Rung }[] {
+  const devRungs = [...config.ladders['sonnet-first'], ...config.ladders['haiku-first']]
   return [
-    ...[...config.ladders['sonnet-first'], ...config.ladders['haiku-first']].map(rung => ({ role: 'dev' as const, rung })),
+    ...devRungs.map(rung => ({ role: 'dev' as const, rung })),
+    ...devRungs.map(rung => ({ role: 'resolve' as const, rung })),
     ...config.remediation.map(rung => ({ role: 'remediate' as const, rung })),
     { role: 'qa' as const, rung: config.qa },
     { role: 'final-qa' as const, rung: config.finalQa },
@@ -372,6 +374,7 @@ function reportOf(kind: string, input: Record<string, unknown>): Report | string
   if (kind === 'qa') return typeof input.pass === 'boolean' ? { kind, pass: input.pass, defects: list(input.defects) } : 'qa needs pass'
   if (kind === 'final-qa') return typeof input.pass === 'boolean' ? { kind, pass: input.pass, findings: list(input.findings) } : 'final-qa needs pass'
   if (kind === 'remediate') return { kind, committed: input.committed === true, summary: str(input.summary) }
+  if (kind === 'resolve') return { kind, resolved: input.resolved === true, summary: str(input.summary), conflict: str(input.conflict) }
   return `unknown kind "${kind}"`
 }
 
@@ -521,6 +524,10 @@ async function launch($: EngineInterface, input: unknown): Promise<string> {
   if (!checked.isValid) return `Refused, nothing started:\n${checked.errors.map(e => `- ${e}`).join('\n')}`
   const closed = await closedIssues($, checked.plan)
   if (typeof closed === 'string') return `Refused, nothing started: ${closed}`
+  const overlaps = checked.plan.allowOverlap ? [] : overlapProblems(checked.plan)
+  if (overlaps.length) {
+    return `Refused, nothing started. These slices would conflict on merge:\n${overlaps.map(o => `- ${o}`).join('\n')}\nAdd a dependency between each pair, or set allowOverlap: true to run them side by side and let conflicts go to the resolve agent.`
+  }
   const problems = reconcileProblems(checked.plan, closed)
   if (problems.length) return `Refused, the plan no longer matches the tracker:\n${problems.map(p => `- ${p}`).join('\n')}`
 
@@ -595,8 +602,10 @@ export const register: Register = (on, opts) => {
       inputSchema: {
         type: 'object',
         properties: {
-          kind: { type: 'string', enum: ['dev', 'qa', 'final-qa', 'remediate'] },
+          kind: { type: 'string', enum: ['dev', 'qa', 'final-qa', 'remediate', 'resolve'] },
           committed: { type: 'boolean' },
+          resolved: { type: 'boolean' },
+          conflict: { type: 'string' },
           pass: { type: 'boolean' },
           summary: { type: 'string' },
           newApis: { type: 'string' },
@@ -872,7 +881,7 @@ export const register: Register = (on, opts) => {
           {going.map(r => (
             <Box key={`p-${r.id}`} flexDirection="column" marginBottom={1}>
               {line(`p-${r.id}-h`, <Text bold wrap="truncate-end"><Text color="yellow">●</Text> {r.id} {r.title}</Text>, [r.runningMs !== null ? fmtTime(r.runningMs) : '', r.tokens ? fmtTokens(r.tokens) : ''].filter(Boolean).join(' · '))}
-              {indent(`p-${r.id}-m`, `${r.mode} · ${r.phase === 'integrating' ? 'merging, then build and suite' : r.phase === 'queued' ? 'queued for merge' : `${r.role ?? ''} ${r.rung ?? ''}`.trim()} · r${r.round}/${r.rungs}`)}
+              {indent(`p-${r.id}-m`, `${r.mode} · ${r.phase === 'resolving' ? `resolving the conflict ${r.rung ?? ''}`.trim() : r.phase === 'integrating' ? 'merging, then build and suite' : r.phase === 'queued' ? 'queued for merge' : `${r.role ?? ''} ${r.rung ?? ''}`.trim()} · r${r.round}/${r.rungs}`)}
               <Text>
                 {'    '}
                 {track(r)}

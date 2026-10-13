@@ -21,15 +21,19 @@ Needs the `worktree-lifecycle` mod, which creates and later ships the integratio
    settles branches and commands, and asks you everything an agent would otherwise guess.
 2. On your go it calls `orchestrator_launch`. The plan is checked before any agent starts: unknown
    deps, cycles, duplicate or clashing branches, an integration branch under `orchestration/`,
-   missing commands, or a haiku-first slice missing any part of its brief all refuse the launch.
+   missing commands, a haiku-first slice missing any part of its brief, or two unordered slices whose
+   briefs change the same files (unless `allowOverlap` is set) all refuse the launch.
 3. The integration branch is created from your base and must build and pass its suite first.
 4. Each slice gets a worktree at `<repo>/<branch>`, cut from the integration branch. A dev agent
    works in it; then an isolated QA agent, given only the slice, the parent and the branch, judges
    it in the same worktree after its ignored build output is cleaned. A rejection climbs the
    slice's ladder; a rejection on the top rung blocks that slice and its dependents only.
 5. Slices that pass QA merge one at a time into the integration worktree, each verified with the
-   build and full suite. A conflict aborts; a red suite resets. The issue closes on a verified merge
-   and the slice's worktree and branch go.
+   build and full suite. A red suite resets. A conflict aborts and goes to a resolve agent, which
+   merges the integration branch into the slice keeping both sides' acceptance criteria, then fresh
+   QA checks the slice and the slices it collided with before the merge is tried again (two
+   rounds, then a blocker). Contradicting requirements are never resolved: they reach you as a
+   blocker. The issue closes on a verified merge and the slice's worktree and branch go.
 6. A final QA judges the integrated whole; its findings go to a fixer, and a fresh judge grades each
    fix.
 7. Nothing is pushed. Push and PR wait for your yes, through worktree-lifecycle's ship.

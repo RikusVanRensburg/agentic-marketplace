@@ -41,6 +41,14 @@ export const SYSTEM: Record<Role, string> = {
     `${CLOSE} Use kind "final-qa": pass, findings.`,
   ].join('\n\n'),
 
+  resolve: [
+    'A slice of a larger plan passed its own QA, but merging it into the integration branch conflicted with slices merged since it started. You resolve that, alone, unattended.',
+    LIMITS,
+    'In your worktree, on the slice branch, run git merge on the integration branch you are given. Resolve every conflict so that the slice\'s acceptance criteria and those of the merged slices you are given all still hold. Never drop or weaken merged behaviour to make the slice fit. Then run the build and the full suite, and commit the merge when green, ending the message with the Co-Authored-By trailer you are given.',
+    'If the slice\'s requirements and the merged slices\' requirements cannot both hold, do not commit and do not guess: abort the merge (git merge --abort) and say exactly which requirements contradict.',
+    `${CLOSE} Use kind "resolve": resolved (true only for a committed, green merge), summary, and conflict when they cannot both hold.`,
+  ].join('\n\n'),
+
   remediate: [
     'You fix named findings on an integrated branch, checked out where you start. The slices are merged and their issues closed.',
     LIMITS,
@@ -53,6 +61,7 @@ export const SYSTEM: Record<Role, string> = {
 export const TOOLS: Record<Role, string[]> = {
   dev: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash', 'PowerShell', 'TodoWrite', REPORT_TOOL],
   remediate: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash', 'PowerShell', 'TodoWrite', REPORT_TOOL],
+  resolve: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash', 'PowerShell', 'TodoWrite', REPORT_TOOL],
   qa: ['Read', 'Glob', 'Grep', 'Bash', 'PowerShell', REPORT_TOOL],
   'final-qa': ['Read', 'Glob', 'Grep', 'Bash', 'PowerShell', REPORT_TOOL],
 }
@@ -82,6 +91,22 @@ function briefText(brief: Brief): string {
   ].join('\n')
 }
 
+// The slices merged after this one started: the ones its merge can collide with.
+function collidedWith(state: RunState, id: string): string[] {
+  const slice = state.slices[id]
+  const started = slice?.rounds[0]?.startedAt ?? 0
+  return Object.values(state.slices)
+    .filter(s => s.id !== id && s.repo === slice?.repo && s.mergedAt !== undefined && s.mergedAt >= started)
+    .map(s => s.id)
+}
+
+function describe(state: RunState, id: string): string {
+  const plan = state.plan.slices.find(s => s.id === id)
+  if (!plan) return id
+  if (state.plan.source.kind === 'github') return `${id} "${plan.title}" (read issue ${id} for its acceptance criteria)`
+  return `${id} "${plan.title}": ${plan.body ?? ''}`
+}
+
 function sliceRef(state: RunState, slice: SlicePlan): string {
   const source = state.plan.source
   if (source.kind === 'github') {
@@ -100,8 +125,20 @@ export function taskOf(state: RunState, role: Role, repo: string, sliceId: strin
   const plan = sliceId ? state.plan.slices.find(s => s.id === sliceId) : undefined
   const slice = sliceId ? state.slices[sliceId] : undefined
 
-  if ((role === 'dev' || role === 'qa') && plan && slice) {
+  if ((role === 'dev' || role === 'qa' || role === 'resolve') && plan && slice) {
     const parts = [sliceRef(state, plan), commandsOf(state, repo)]
+    const collided = collidedWith(state, slice.id)
+    const collidedText = collided.map(c => `- ${describe(state, c)}`).join('\n')
+
+    if (role === 'resolve') {
+      parts.push(`Merge this integration branch into your slice branch: ${state.integration[repo]?.branch ?? ''}`)
+      parts.push(`Conflicting files: ${(slice.conflicts ?? []).join(', ')}`)
+      if (collided.length) parts.push(`Merged since this slice started; their acceptance criteria must still hold:\n${collidedText}`)
+      if (slice.defects?.length) parts.push(`QA rejected the previous resolve. Fix exactly these:\n${slice.defects.map(d => `- ${d}`).join('\n')}`)
+      if (slice.answer) parts.push(`The person answered the blocker on this slice: ${slice.answer}`)
+      parts.push(`End the merge commit message with:\n${trailerOf(rung, role, round)}`)
+      return parts.filter(Boolean).join('\n\n')
+    }
 
     if (role === 'dev') {
       if (plan.brief) parts.push(`Brief:\n${briefText(plan.brief)}`)
@@ -113,6 +150,9 @@ export function taskOf(state: RunState, role: Role, repo: string, sliceId: strin
     } else {
       const siblings = state.plan.slices.filter(s => s.id !== plan.id).map(s => `${s.id} ${s.title}`)
       if (siblings.length) parts.push(`Sibling slices: ${siblings.join('; ')}`)
+      if (slice.isAfterResolve && collided.length) {
+        parts.push(`This branch now carries a resolved merge with the slices below. Check that their acceptance criteria still hold as well as this slice's:\n${collidedText}`)
+      }
     }
 
     return parts.filter(Boolean).join('\n\n')

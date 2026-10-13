@@ -8,7 +8,7 @@ import { rungLabel } from './config'
 import type { Closed, Plan } from './plan'
 import { integrationBranchOf, sliceBranchOf } from './plan'
 
-export type Role = 'dev' | 'qa' | 'final-qa' | 'remediate'
+export type Role = 'dev' | 'qa' | 'final-qa' | 'remediate' | 'resolve'
 
 export type Phase =
   | 'waiting' // deps not merged yet
@@ -18,6 +18,7 @@ export type Phase =
   | 'qa'
   | 'queued' // QA passed, waiting for integration
   | 'integrating'
+  | 'resolving' // a merge conflicted; an agent merges the integration branch into the slice
   | 'merged'
   | 'landed' // closed as completed before this run
   | 'descoped' // closed otherwise before this run, nothing depends on it
@@ -45,7 +46,10 @@ export type DevReport = { kind: 'dev'; committed: boolean; summary: string; newA
 export type QaReport = { kind: 'qa'; pass: boolean; defects: string[] }
 export type FinalReport = { kind: 'final-qa'; pass: boolean; findings: string[] }
 export type FixReport = { kind: 'remediate'; committed: boolean; summary: string }
-export type Report = DevReport | QaReport | FinalReport | FixReport
+// resolved: the conflict is resolved and committed; otherwise `conflict` says why the two
+// slices' requirements cannot both hold.
+export type ResolveReport = { kind: 'resolve'; resolved: boolean; summary: string; conflict?: string }
+export type Report = DevReport | QaReport | FinalReport | FixReport | ResolveReport
 
 export type SliceState = {
   id: string
@@ -69,6 +73,13 @@ export type SliceState = {
   stoppedIn?: Phase
   // True when an agent could not run (refused, no report twice), not when its work failed.
   stoppedOnInfra?: boolean
+  // When the slice merged, so a later conflict can name the slices merged after it started.
+  mergedAt?: number
+  // The last merge conflict: the files, and how many resolve rounds it has had.
+  conflicts?: string[]
+  resolveAttempts?: number
+  // The check and QA in progress follow a resolve rather than a dev round.
+  isAfterResolve?: boolean
 }
 
 export type FinalPhase = 'idle' | 'judging' | 'fixing' | 'pass' | 'blocked' | 'skipped'
@@ -178,8 +189,11 @@ export type Event =
 
 export type Step = { state: RunState; effects: Effect[] }
 
-const ACTIVE: readonly Phase[] = ['starting', 'dev', 'checking', 'qa']
-const UNFINISHED: readonly Phase[] = ['waiting', 'starting', 'dev', 'checking', 'qa', 'queued', 'integrating']
+// Resolve rounds a conflict gets before it reaches the person.
+export const RESOLVE_ATTEMPTS = 2
+
+const ACTIVE: readonly Phase[] = ['starting', 'dev', 'checking', 'qa', 'resolving']
+const UNFINISHED: readonly Phase[] = ['waiting', 'starting', 'dev', 'checking', 'qa', 'queued', 'integrating', 'resolving']
 const DONE: readonly Phase[] = ['merged', 'landed']
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
@@ -325,7 +339,15 @@ export function step(prev: RunState, event: Event, now: number): Step {
 
     case 'dev-checked': {
       const slice = state.slices[event.slice]
-      if (slice && slice.phase === 'checking') {
+      if (slice && slice.phase === 'checking' && slice.isAfterResolve) {
+        if (event.isClean && event.isAdvanced) {
+          slice.phase = 'qa'
+          effects.push({ kind: 'clean-for-qa', slice: slice.id })
+          spawn(state, effects, 'qa', slice.repo, slice.id, slice.round, state.config.qa, now)
+        } else {
+          resolveAgain(state, effects, slice, ['the resolve left the worktree dirty or committed nothing; commit the resolved merge'], now)
+        }
+      } else if (slice && slice.phase === 'checking') {
         if (event.isClean && event.isAdvanced) {
           slice.phase = 'qa'
           effects.push({ kind: 'clean-for-qa', slice: slice.id })
@@ -346,12 +368,16 @@ export function step(prev: RunState, event: Event, now: number): Step {
         if (event.isMerged) {
           slice.phase = 'merged'
           slice.commit = event.commit
+          slice.mergedAt = now
           state.handoff[slice.id] = handoffOf(state, slice)
           effects.push({ kind: 'remove-slice', slice: slice.id })
           if (state.plan.source.kind === 'github') effects.push({ kind: 'close-issue', slice: slice.id })
+        } else if (event.conflicts?.length && (slice.resolveAttempts ?? 0) < RESOLVE_ATTEMPTS) {
+          slice.conflicts = event.conflicts
+          startResolve(state, effects, slice, null, now)
         } else {
           const reason = event.conflicts?.length
-            ? `merge conflict in ${event.conflicts.join(', ')}; merge aborted`
+            ? `merge conflict in ${event.conflicts.join(', ')} survived ${slice.resolveAttempts ?? 0} resolve round(s); merge aborted`
             : `verify failed after merge, merge reset: ${event.failure ?? 'no detail'}`
           blockSlice(state, effects, slice, reason, now)
         }
@@ -407,6 +433,7 @@ function ended(state: RunState, effects: Effect[], ref: AgentRef, event: Extract
     : event.reason === 'refusal' ? 'refusal'
     : !report ? 'no-report'
     : report.kind === 'qa' || report.kind === 'final-qa' ? (report.pass ? 'pass' : 'fail')
+    : report.kind === 'resolve' ? (report.resolved ? 'pass' : 'fail')
     : report.committed ? 'pass' : 'no-commit'
 
   if (round) {
@@ -462,6 +489,22 @@ function ended(state: RunState, effects: Effect[], ref: AgentRef, event: Extract
         effects.push({ kind: 'check-dev', slice: slice.id })
       } else {
         climb(state, effects, slice, [`round ${ref.round} dev (${rungLabel(ref.rung)}) committed nothing: ${report.summary}`], now)
+      }
+    } else if (report.kind === 'resolve') {
+      if (report.resolved) {
+        slice.phase = 'checking'
+        slice.isAfterResolve = true
+        effects.push({ kind: 'check-dev', slice: slice.id })
+      } else {
+        blockSlice(state, effects, slice, `requirements conflict with merged work: ${report.conflict || report.summary}`, now, rungLabel(ref.rung))
+      }
+    } else if (report.kind === 'qa' && slice.isAfterResolve) {
+      if (report.pass) {
+        slice.isAfterResolve = false
+        slice.phase = 'queued'
+        state.queue.push(slice.id)
+      } else {
+        resolveAgain(state, effects, slice, report.defects.length ? report.defects : ['QA rejected the resolved merge without listing defects'], now)
       }
     } else if (report.kind === 'qa') {
       if (report.pass) {
@@ -552,6 +595,29 @@ function climb(state: RunState, effects: Effect[], slice: SliceState, defects: s
   }
 
   spawnDev(state, effects, slice, now)
+}
+
+// A merge conflicted: an agent merges the integration branch into the slice branch, in the
+// slice's worktree, keeping both sides' acceptance criteria. Same rung as the slice's dev.
+function startResolve(state: RunState, effects: Effect[], slice: SliceState, defects: string[] | null, now: number) {
+  const rung = state.config.ladders[slice.mode][slice.round - 1] ?? state.config.ladders[slice.mode].at(-1)
+  if (!rung) {
+    blockSlice(state, effects, slice, 'no rung for the resolve', now)
+    return
+  }
+  slice.resolveAttempts = (slice.resolveAttempts ?? 0) + 1
+  slice.defects = defects
+  slice.isAfterResolve = true
+  slice.phase = 'resolving'
+  spawn(state, effects, 'resolve', slice.repo, slice.id, slice.round, rung, now)
+}
+
+function resolveAgain(state: RunState, effects: Effect[], slice: SliceState, defects: string[], now: number) {
+  if ((slice.resolveAttempts ?? 0) >= RESOLVE_ATTEMPTS) {
+    blockSlice(state, effects, slice, `the resolved merge failed after ${slice.resolveAttempts} resolve round(s)`, now, undefined, defects)
+    return
+  }
+  startResolve(state, effects, slice, defects, now)
 }
 
 function remediate(state: RunState, effects: Effect[], final: FinalState, now: number) {
@@ -655,8 +721,13 @@ function retry(state: RunState, effects: Effect[], at: string, answer: string, n
     }
   }
 
-  if (slice.stoppedIn === 'integrating') {
+  if (slice.stoppedIn === 'resolving' || (slice.isAfterResolve && (slice.stoppedIn === 'checking' || slice.stoppedIn === 'qa'))) {
+    // The resolve stopped (a requirements conflict, or its rounds ran out): it goes again with the answer.
+    slice.resolveAttempts = 0
+    startResolve(state, effects, slice, slice.defects, now)
+  } else if (slice.stoppedIn === 'integrating') {
     // The work passed QA; only the merge or its verify failed, so it queues again.
+    slice.resolveAttempts = 0
     slice.phase = 'queued'
     state.queue.push(slice.id)
   } else if (slice.stoppedOnInfra && slice.stoppedIn === 'qa' && slice.worktree) {

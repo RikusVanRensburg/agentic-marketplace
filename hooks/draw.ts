@@ -119,7 +119,7 @@ const STAGES = ['dev', 'QA', 'merge'] as const
 
 export function progressSvg(W: number, row: SliceRow): string {
   const stats = [row.runningMs !== null ? fmtTime(row.runningMs) : '', row.tokens ? fmtTokens(row.tokens) : ''].filter(Boolean).join(' · ')
-  const what = row.phase === 'integrating' ? 'merging, then build and suite' : row.phase === 'queued' ? 'queued for merge' : row.phase === 'starting' ? 'creating its worktree' : `${row.role ?? ''} ${row.rung ?? ''}`.trim()
+  const what = row.phase === 'resolving' ? `resolving the conflict ${row.rung ?? ''}`.trim() : row.phase === 'integrating' ? 'merging, then build and suite' : row.phase === 'queued' ? 'queued for merge' : row.phase === 'starting' ? 'creating its worktree' : `${row.role ?? ''} ${row.rung ?? ''}`.trim()
   const meta = `${row.mode} · ${what} · r${row.round}/${row.rungs}`
   const gap = 4
   const sw = (W - 14 - gap * 2) / 3

@@ -14,6 +14,7 @@ const GROUP: Record<Phase, Group> = {
   qa: 'build',
   queued: 'integrate',
   integrating: 'integrate',
+  resolving: 'integrate',
   merged: 'done',
   landed: 'done',
   descoped: 'done',
@@ -23,7 +24,7 @@ const GROUP: Record<Phase, Group> = {
 
 // How far along the slice's own pipeline it is: dev, QA, integration, merged.
 const STAGE: Record<Phase, number> = {
-  waiting: 0, halted: 0, starting: 0, dev: 1, checking: 1, qa: 2, queued: 3, integrating: 3, merged: 4, landed: 4, descoped: 4, blocked: 0,
+  waiting: 0, halted: 0, starting: 0, dev: 1, checking: 1, qa: 2, queued: 3, integrating: 3, resolving: 3, merged: 4, landed: 4, descoped: 4, blocked: 0,
 }
 
 // An agent's name in the background task list and the pane: `orch <slice> <role> r<n> #<seq>`.

@@ -17,6 +17,8 @@ You prepare a run and launch it. From launch on, the orchestrator mod drives eve
 
 Dependencies, in priority order: an explicit "Blocked by", then the order the plan lists slices, then issue number. Keep only edges that are real: a wrong edge serialises work for nothing, a missing one merges work onto code that is not there yet. The mod refuses unknown deps, cycles and duplicate ids, but only you can tell whether an edge is real.
 
+Slices that change the same files and have no edge between them start from the same base, so the second to merge conflicts. The mod refuses a plan where two briefs name the same files with no edge between them. Add the edge, or set `allowOverlap: true` when they must run side by side; a conflict then goes to the resolve agent.
+
 ## 3. Pick each slice's mode
 
 - **haiku-first** only when you can name the exact files and symbols, the work is mechanical, and you can write every field of the brief below without guessing.
@@ -72,6 +74,7 @@ A plain plan uses `"source": { "kind": "plain", "text": "<the plan>" }`, short i
 ## During the run
 
 - The pane (`/orchestrator pane`) and the band above the prompt show progress. `orchestrator_status` gives you the same as text.
+- A merge conflict first goes to a resolve agent, which merges the integration branch into the slice keeping both sides' acceptance criteria; fresh QA then checks the slice and the slices it collided with. If the two slices' requirements contradict, it stops and that becomes a blocker.
 - A blocker arrives as a message while the rest of the run continues. Ask the person, then hand the answer back: `/orchestrator retry <slice | final:<repo> | integration:<repo>> <answer>`. The slice resumes on the rung it stopped on, with the answer in its prompt.
 - `/orchestrator abort` stops new work; `/orchestrator take` moves a run to this session.
 

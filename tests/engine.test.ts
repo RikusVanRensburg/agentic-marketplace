@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { Effect, Event, Report, RunState, Step } from '../hooks/engine'
 import { start, step, totals } from '../hooks/engine'
+import { taskOf } from '../hooks/prompts'
 import type { Plan } from '../hooks/plan'
 
 import { config, plan } from './fixture'
@@ -155,7 +156,7 @@ test('a refusal blocks at once', () => {
   expect(effects.find(e => e.kind === 'blocker')).toMatchObject({ blocker: { reason: expect.stringMatching(/refused/) } })
 })
 
-test('a merge conflict blocks the slice and its dependents, and frees integration for the next', () => {
+test('a merge conflict goes to a resolve agent at the slice rung, and frees integration for the next', () => {
   const h = harness()
   h.ev({ kind: 'integration-ready', repo: 'timebase', path: 'D:/r/i' })
   const dev107 = spawnOf(h.ev({ kind: 'slice-ready', slice: '107', path: 'D:/r/x', baseSha: 'b0' }))
@@ -164,9 +165,60 @@ test('a merge conflict blocks the slice and its dependents, and frees integratio
   h.pass('109', dev109)
 
   const effects = h.ev({ kind: 'integrated', slice: '107', isMerged: false, conflicts: ['src/a.cs'] })
-  expect(effects.find(e => e.kind === 'blocker')).toMatchObject({ blocker: { at: '107', reason: expect.stringMatching(/conflict in src\/a.cs/) } })
+  expect(spawnOf(effects)).toMatchObject({ role: 'resolve', slice: '107', round: 1, rung: { model: 'haiku', effort: 'high' } })
   expect(effects).toContainEqual({ kind: 'integrate', slice: '109' })
+  expect(h.slice('107')).toMatchObject({ phase: 'resolving', conflicts: ['src/a.cs'], resolveAttempts: 1 })
+  expect(effects.some(e => e.kind === 'blocker')).toBe(false)
+})
+
+function conflicted() {
+  const h = harness()
+  h.ev({ kind: 'integration-ready', repo: 'timebase', path: 'D:/r/i' })
+  const dev107 = spawnOf(h.ev({ kind: 'slice-ready', slice: '107', path: 'D:/r/x', baseSha: 'b0' }))
+  const dev109 = spawnOf(h.ev({ kind: 'slice-ready', slice: '109', path: 'D:/r/y', baseSha: 'b0' }))
+  h.pass('109', dev109)
+  h.ev({ kind: 'integrated', slice: '109', isMerged: true, commit: 'c109' })
+  h.pass('107', dev107)
+  const resolve = spawnOf(h.ev({ kind: 'integrated', slice: '107', isMerged: false, conflicts: ['src/a.cs'] }))
+  return { h, resolve }
+}
+
+test('a resolved merge is checked, then QA judges it with the collided slice, then it queues', () => {
+  const { h, resolve } = conflicted()
+  expect(h.finish(resolve, { kind: 'resolve', resolved: true, summary: 'merged both' })).toContainEqual({ kind: 'check-dev', slice: '107' })
+  const qa = spawnOf(h.ev({ kind: 'dev-checked', slice: '107', isClean: true, isAdvanced: true }))
+  expect(qa).toMatchObject({ role: 'qa', slice: '107' })
+  expect(taskOf(h.state, 'qa', 'timebase', '107', 1, config.qa)).toMatch(/resolved merge with the slices below[\s\S]*109/)
+  expect(taskOf(h.state, 'resolve', 'timebase', '107', 1, config.ladders['haiku-first'][0]!)).toMatch(/Conflicting files: src\/a.cs[\s\S]*109/)
+  expect(h.finish(qa, { kind: 'qa', pass: true, defects: [] })).toContainEqual({ kind: 'integrate', slice: '107' })
+})
+
+test('a requirements conflict blocks with its reason and halts the dependents', () => {
+  const { h, resolve } = conflicted()
+  const effects = h.finish(resolve, { kind: 'resolve', resolved: false, summary: 'cannot', conflict: '107 needs line 1 to say A, 109 says B' })
+  expect(effects.find(e => e.kind === 'blocker')).toMatchObject({ blocker: { at: '107', reason: 'requirements conflict with merged work: 107 needs line 1 to say A, 109 says B' } })
   expect(h.slice('108').phase).toBe('halted')
+})
+
+test('a resolve QA rejects twice ends in a blocker', () => {
+  const { h, resolve } = conflicted()
+  let next = resolve
+  for (let i = 0; i < 2; i++) {
+    h.finish(next, { kind: 'resolve', resolved: true, summary: 'tried' })
+    const qa = spawnOf(h.ev({ kind: 'dev-checked', slice: '107', isClean: true, isAdvanced: true }))
+    next = spawnOf(h.finish(qa, { kind: 'qa', pass: false, defects: ['109 behaviour lost'] }))
+    if (i === 0) expect(next).toMatchObject({ role: 'resolve' })
+  }
+  expect(h.slice('107').phase).toBe('blocked')
+  expect(h.slice('107').blocker).toMatch(/failed after 2 resolve round/)
+})
+
+test('retrying a requirements conflict resolves again with the answer', () => {
+  const { h, resolve } = conflicted()
+  h.finish(resolve, { kind: 'resolve', resolved: false, summary: 'cannot', conflict: 'contradiction' })
+  const again = spawnOf(h.ev({ kind: 'retry', at: '107', answer: 'keep 109 wording, append ours' }))
+  expect(again).toMatchObject({ role: 'resolve', slice: '107' })
+  expect(taskOf(h.state, 'resolve', 'timebase', '107', 1, config.ladders['haiku-first'][0]!)).toMatch(/keep 109 wording, append ours/)
 })
 
 test('takeover fresh resets the worktree when the climb changes model, and drops the old defects', () => {

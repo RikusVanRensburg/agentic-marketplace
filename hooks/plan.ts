@@ -53,6 +53,8 @@ export type Plan = {
   repos: Record<string, RepoPlan>
   slices: SlicePlan[]
   integrationBranch?: string
+  // Set when the pre-flight accepts that unordered slices touch the same files.
+  allowOverlap?: boolean
 }
 
 export const TYPES: readonly string[] = ['feat', 'fix', 'docs', 'chore', 'refactor', 'test']
@@ -260,4 +262,28 @@ export function reconcileProblems(plan: Plan, closed: Closed): string[] {
   return plan.slices
     .filter(s => !done.has(s.id) && !dropped.has(s.id))
     .flatMap(s => s.deps.filter(d => dropped.has(d)).map(d => `slice ${s.id} depends on ${d}, which is closed without being completed`))
+}
+
+// Slices that name the same files in their briefs and that no dependency orders run side by
+// side from the same base, so the second to merge conflicts. Either add an edge or say so.
+export function overlapProblems(plan: Plan): string[] {
+  const deps = new Map(plan.slices.map(s => [s.id, s.deps]))
+  const reaches = (from: string, to: string, seen = new Set<string>()): boolean => {
+    if (from === to) return true
+    if (seen.has(from)) return false
+    seen.add(from)
+    return (deps.get(from) ?? []).some(d => reaches(d, to, seen))
+  }
+  const problems: string[] = []
+  const withFiles = plan.slices.filter(s => s.brief?.inScope.files.length)
+  for (let i = 0; i < withFiles.length; i++) {
+    for (let j = i + 1; j < withFiles.length; j++) {
+      const a = withFiles[i] as SlicePlan
+      const b = withFiles[j] as SlicePlan
+      if (a.repo !== b.repo || reaches(a.id, b.id) || reaches(b.id, a.id)) continue
+      const shared = a.brief!.inScope.files.filter(f => b.brief!.inScope.files.includes(f))
+      if (shared.length) problems.push(`slices ${a.id} and ${b.id} both change ${shared.join(', ')} with no dependency between them`)
+    }
+  }
+  return problems
 }
