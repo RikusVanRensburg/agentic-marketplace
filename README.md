@@ -94,3 +94,7 @@ the current session.
   as messages; everything they report goes through the report tool. `/orchestrator status` counts
   the hand-backs held.
 - One run at a time.
+- Spawns happen only inside a hook of the mod that is still running (CLI 2.1.295 leaves the mod's
+  own hooks out of a spawn made later), so they queue and the band, the pane, the agents' calls and
+  the commands let them go. If a spawn waits 30 seconds with nothing drawing or running, a toast and
+  the status line say so.

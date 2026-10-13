@@ -228,3 +228,8 @@ test('QA is told history is not evidence, and an answer never overrides criteria
   expect(SYSTEM['final-qa']).toMatch(/claims, not evidence/)
   expect(taskOf(s, 'dev', 'timebase', '107', 1, config.ladders['haiku-first'][0]!)).toMatch(/never overrides any slice's acceptance criteria/)
 })
+
+test('dev commits failing tests before the code, and QA checks that order where behaviour changes', () => {
+  expect(SYSTEM.dev).toMatch(/commit the failing tests on their own first/)
+  expect(SYSTEM.qa).toMatch(/tests committed before the code that makes them pass/)
+})

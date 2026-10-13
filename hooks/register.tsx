@@ -68,6 +68,10 @@ const pendingSpawns: Extract<Effect, { kind: 'spawn' }>[] = []
 let isFlushing = false
 // Hand-backs of the mod's agents answered by the mod instead of reaching the session.
 let handbacksHeld = 0
+// When the oldest waiting spawn was queued, and whether the person was told it is waiting.
+let queuedSince: number | null = null
+let isWaitShown = false
+const WAIT_MS = 30_000
 
 // --- the host
 
@@ -168,7 +172,20 @@ async function flushSpawns($: EngineInterface): Promise<void> {
     }
   } finally {
     isFlushing = false
+    if (!pendingSpawns.length) {
+      queuedSince = null
+      isWaitShown = false
+    }
   }
+}
+
+// Spawns drain only inside a live hook. With no surface drawing and no agent running, nothing
+// may fire: after a while the person hears why the run is waiting, instead of a silent stall.
+function noticeWaiting($: EngineInterface): void {
+  if (!queuedSince || isWaitShown || Date.now() - queuedSince < WAIT_MS) return
+  isWaitShown = true
+  $.ui.toast(`orchestrator: ${pendingSpawns.length} agent${pendingSpawns.length === 1 ? '' : 's'} waiting to start; open the pane or type /orchestrator to let them go`)
+  $.ui.status('orch waiting: open the pane (/orchestrator pane)')
 }
 
 async function save($: EngineInterface, state: RunState): Promise<void> {
@@ -181,6 +198,7 @@ async function redraw($: EngineInterface): Promise<void> {
   showStatus($)
   const state = current
   await update($, viewAtom, () => (state ? viewOf(state, Date.now()) : null))
+  noticeWaiting($)
   if (state?.status === 'running' && !ticker) ticker = $.clock.every(5000, () => void redraw($))
   if (state?.status !== 'running' && ticker) {
     ticker.cancel()
@@ -197,6 +215,7 @@ function perform($: EngineInterface, effects: Effect[]): void {
       for (const effect of effects) {
         if (effect.kind === 'spawn') {
           pendingSpawns.push(effect)
+          queuedSince ??= Date.now()
           await update($, uiAtom, prev => ({ ...prev, pulse: (prev.pulse ?? 0) + 1 }))
           continue
         }
