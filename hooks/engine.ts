@@ -63,6 +63,10 @@ export type SliceState = {
   commit?: string
   dev?: DevReport
   blocker?: string
+  // The person's answer to this slice's last blocker, given to every dev round after it.
+  answer?: string
+  // The phase the slice was in when it blocked, so an answer resumes it from there.
+  stoppedIn?: Phase
 }
 
 export type FinalPhase = 'idle' | 'judging' | 'fixing' | 'pass' | 'blocked' | 'skipped'
@@ -75,6 +79,7 @@ export type FinalState = {
   infraRetried: boolean
   findings: string[]
   rounds: Round[]
+  answer?: string
 }
 
 export type AgentRef = {
@@ -166,6 +171,8 @@ export type Event =
   | { kind: 'integrated'; slice: string; isMerged: true; commit: string }
   | { kind: 'integrated'; slice: string; isMerged: false; conflicts?: string[]; failure?: string }
   | { kind: 'abort' }
+  // The person answered a blocker: `at` is a slice id or `final:<repo>`.
+  | { kind: 'retry'; at: string; answer: string }
 
 export type Step = { state: RunState; effects: Effect[] }
 
@@ -225,6 +232,11 @@ export function step(prev: RunState, event: Event, now: number): Step {
   const state = clone(prev)
   const effects: Effect[] = []
 
+  if (event.kind === 'retry' && state.status === 'done') {
+    state.status = 'running'
+    delete state.endedAt
+  }
+
   if (state.status !== 'running') {
     return { state, effects }
   }
@@ -234,6 +246,10 @@ export function step(prev: RunState, event: Event, now: number): Step {
       state.status = 'aborted'
       state.endedAt = now
       return { state, effects }
+
+    case 'retry':
+      retry(state, effects, event.at, event.answer, now)
+      break
 
     case 'integration-ready': {
       const integration = state.integration[event.repo]
@@ -563,6 +579,7 @@ function block(state: RunState, effects: Effect[], at: string, reason: string, n
 function blockSlice(state: RunState, effects: Effect[], slice: SliceState, reason: string, now: number, rung?: string, defects?: string[]) {
   if (state.integrating === slice.id) state.integrating = null
   state.queue = state.queue.filter(id => id !== slice.id)
+  slice.stoppedIn = slice.phase
   slice.phase = 'blocked'
   slice.blocker = reason
   block(state, effects, slice.id, reason, now, rung, defects ?? slice.defects ?? undefined, slice.worktree)
@@ -581,6 +598,88 @@ function blockSlice(state: RunState, effects: Effect[], slice: SliceState, reaso
       }
     }
   }
+}
+
+// --- answering a blocker
+
+function retry(state: RunState, effects: Effect[], at: string, answer: string, now: number) {
+  if (at.startsWith('integration:')) {
+    const repo = at.slice(12)
+    if (!state.blockers.some(b => b.at === at)) return
+    state.blockers = state.blockers.filter(b => b.at !== at)
+    for (const slice of Object.values(state.slices)) {
+      if (slice.repo === repo && slice.phase === 'halted' && slice.blocker?.startsWith('integration branch')) {
+        slice.phase = 'waiting'
+        delete slice.blocker
+      }
+    }
+    effects.push({ kind: 'create-integration', repo })
+    return
+  }
+
+  if (at.startsWith('final:')) {
+    const final = state.finals[at.slice(6)]
+    if (!final || final.phase !== 'blocked') return
+    // The remediation ladder starts over, on the strength of the answer.
+    final.answer = answer
+    final.round = 0
+    final.infraRetried = false
+    remediate(state, effects, final, now)
+    return
+  }
+
+  const slice = state.slices[at]
+  if (!slice || slice.phase !== 'blocked') return
+
+  // The slice goes again on the rung it stopped on: what changed is the answer, not the rung.
+  slice.answer = answer
+  slice.infraRetried = false
+  delete slice.blocker
+  state.blockers = state.blockers.filter(b => b.at !== at)
+
+  const released = new Set([slice.id])
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const other of Object.values(state.slices)) {
+      if (!released.has(other.id) && other.phase === 'halted' && depsOf(state, other.id).some(d => released.has(d))) {
+        other.phase = 'waiting'
+        delete other.blocker
+        released.add(other.id)
+        grew = true
+      }
+    }
+  }
+
+  if (slice.stoppedIn === 'integrating') {
+    // The work passed QA; only the merge or its verify failed, so it queues again.
+    slice.phase = 'queued'
+    state.queue.push(slice.id)
+  } else if (slice.worktree) {
+    spawnDev(state, effects, slice, now)
+  } else {
+    slice.phase = 'waiting'
+  }
+}
+
+// After a reload: the effects that were running in the module that went away. Each one is
+// safe to issue again.
+export function inFlight(state: RunState): Effect[] {
+  if (state.status !== 'running') return []
+  const effects: Effect[] = []
+
+  for (const [repo, integration] of Object.entries(state.integration)) {
+    const failed = state.blockers.some(b => b.at === `integration:${repo}`)
+    if (!integration.isReady && !failed) effects.push({ kind: 'create-integration', repo })
+  }
+
+  for (const slice of Object.values(state.slices)) {
+    if (slice.phase === 'starting') effects.push({ kind: 'create-slice', slice: slice.id })
+    if (slice.phase === 'checking') effects.push({ kind: 'check-dev', slice: slice.id })
+    if (slice.phase === 'integrating') effects.push({ kind: 'integrate', slice: slice.id })
+  }
+
+  return effects
 }
 
 // --- scheduling
