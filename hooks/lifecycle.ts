@@ -82,8 +82,10 @@ async function bareRepo(ctx: Ctx, cwd: string): Promise<Repo | Fail> {
   return repo
 }
 
+// Never prunes, whatever `fetch.prune` says: `branch -d` measures a squash-merged branch
+// against origin/<branch>, so that ref goes only in housekeeping's last step.
 async function fetchOrigin(ctx: Ctx, root: string, refspec?: string): Promise<string | null> {
-  const fetched = await ctx.run(['git', '-C', root, 'fetch', 'origin', ...(refspec ? [refspec] : [])], { timeoutMs: 120_000 })
+  const fetched = await ctx.run(['git', '-C', root, 'fetch', '--no-prune', 'origin', ...(refspec ? [refspec] : [])], { timeoutMs: 120_000 })
 
   return fetched.exitCode === 0 ? null : `fetch failed (${firstLine(fetched)}), so origin may be stale`
 }
@@ -464,7 +466,7 @@ export async function runClean(ctx: Ctx, plan: WorktreeCleanPlan): Promise<Workt
     const forwarded = await ctx.run(['git', '-C', plan.baseWorktree, 'merge', '--ff-only', `origin/${plan.base}`])
     done.push(forwarded.exitCode === 0 ? `fast-forwarded ${plan.base}` : `left ${plan.base} as it was (${firstLine(forwarded)})`)
   } else {
-    const fetched = await ctx.run(['git', '-C', root, 'fetch', 'origin', `${plan.base}:${plan.base}`], { timeoutMs: 120_000 })
+    const fetched = await ctx.run(['git', '-C', root, 'fetch', '--no-prune', 'origin', `${plan.base}:${plan.base}`], { timeoutMs: 120_000 })
     done.push(fetched.exitCode === 0 ? `fast-forwarded ${plan.base}` : `left ${plan.base} as it was (${firstLine(fetched)})`)
   }
 

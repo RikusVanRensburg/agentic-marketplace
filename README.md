@@ -81,5 +81,7 @@ deleted.
 
 ## Known limits
 
-- After a squash merge whose `origin/<branch>` ref is already gone, `branch -d` refuses; the mod
-  stops and says so rather than using `-D`.
+- After a squash merge, `branch -d` needs `origin/<branch>` to measure the branch against. The
+  mod's own fetches never prune it (`--no-prune`, whatever `fetch.prune` says), but a fetch run
+  elsewhere with `fetch.prune` set can. Then `-d` refuses, and the mod stops and says so rather
+  than using `-D`.

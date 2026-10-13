@@ -67,6 +67,7 @@ test('empty parents go up to the first folder that still holds something', async
   const result = await clean($)
 
   expect(rmdirs(ran)).toEqual(['D:\\r\\fix\\RVR'])
+  expect(ran).toContain('git -C D:/r fetch --no-prune origin main')
   expect(disk['D:/r/fix']).toEqual(['RVR', 'OTHER'])
   expect(result.text).toMatch(/removed the empty folder D:\/r\/fix\/RVR/)
 })

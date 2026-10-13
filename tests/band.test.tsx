@@ -56,6 +56,7 @@ test('the ship tool waits for the press, and the press pushes and opens a draft 
   await ui.press({ key: 'confirm' })
 
   expect(ran).toContain('git -C D:/r/feat/RVR/x push -u origin feat/RVR/x')
+  expect(ran).toContain('git -C D:/r fetch --no-prune origin main')
   expect(ran.find(line => line.startsWith('gh pr create'))).toMatch(/--base main --head feat\/RVR\/x --title feat: add x --body-file - --draft/)
 })
 
