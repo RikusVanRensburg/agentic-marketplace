@@ -15,7 +15,7 @@ import { overlapProblems, reconcileProblems, validatePlan } from './plan'
 import { SYSTEM, TOOLS, taskOf, typeName } from './prompts'
 import type { LogRow } from './stats'
 import { parseLog, statsText } from './stats'
-import { BAND_H, HEADER_H, LINE_H, PROGRESS_H, activitySvg, bandCounts, bandLabel, bandSvg, blockerSvg, finalLine, headerSvg, mergedLine, progressSvg, waitingLine } from './draw'
+import { BAND_H, HEADER_H, LINE_H, PROGRESS_H, activitySvg, bandCounts, bandLabel, bandSvg, nextStepOf, blockerSvg, finalLine, headerSvg, mergedLine, progressSvg, waitingLine } from './draw'
 import { bar, fmtTime, fmtTokens, taskNameOf, viewOf } from './view'
 
 const PLUGIN = 'orchestrator'
@@ -514,7 +514,9 @@ async function announce($: EngineInterface, state: RunState, blocker: Blocker): 
     text: [
       `[orchestrator] ${blocker.at} is blocked and its chain has stopped${Object.keys(state.agents).length || state.queue.length || state.integrating ? `; the rest of run ${state.id} keeps going` : ''}.`,
       blockerText(state, blocker),
-      `Ask me how to proceed. My answer goes back with: /orchestrator retry ${blocker.at} <answer>`,
+      blocker.reason.startsWith('requirements conflict')
+        ? `Ask me which slice wins. Settle it with /orchestrator drop ${blocker.at} (or drop the merged slice it contradicts and retry this one); an answer cannot override acceptance criteria.`
+        : `Ask me how to proceed. My answer goes back with: /orchestrator retry ${blocker.at} <answer>`,
     ].join('\n\n'),
   })
 }
@@ -1025,7 +1027,7 @@ export const register: Register = (on, opts) => {
               {line(`b-${r.id}-h`, <Text color="red" bold wrap="truncate-end">✗ {r.id} {r.title}</Text>, `${r.rung ?? ''} · r${r.round}/${r.rungs}`)}
               {indent(`b-${r.id}-why`, r.blocker ?? 'blocked', 'red')}
               {r.defects.slice(0, 3).map((d, i) => indent(`b-${r.id}-d${i}`, `· ${d}`, 'red'))}
-              {indent(`b-${r.id}-cmd`, `/orchestrator retry ${r.id} <answer>`, 'red')}
+              {indent(`b-${r.id}-cmd`, nextStepOf(r), 'red')}
               {detailsButton(r.id)}
               {open === r.id && drillText(`d-${r.id}`, r.id, footerOf(r))}
             </Box>

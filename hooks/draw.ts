@@ -88,13 +88,18 @@ ${tileSvg}`,
   )
 }
 
+// What the person types next for a blocked slice: a requirements conflict is settled by dropping
+// a slice, anything else by an answer.
+export const nextStepOf = (row: SliceRow) =>
+  row.blocker?.startsWith('requirements conflict') ? `/orchestrator drop ${row.id}` : `/orchestrator retry ${row.id} <answer>`
+
 // --- a blocker card: reason, rung, open defects, how to answer
 
 export function blockerSvg(W: number, row: SliceRow): { svg: string; height: number } {
   const inner = W - 20
   const reason = wrap(row.blocker ?? 'blocked', 12, inner, 2)
   const defects = row.defects.slice(0, 3).map(d => fit(`· ${d}`, 12, inner))
-  const lines = [...reason.map(l => ({ s: l, size: 12, mono: false })), ...defects.map(l => ({ s: l, size: 12, mono: false })), { s: `/orchestrator retry ${row.id} <answer>`, size: 11, mono: true }]
+  const lines = [...reason.map(l => ({ s: l, size: 12, mono: false })), ...defects.map(l => ({ s: l, size: 12, mono: false })), { s: nextStepOf(row), size: 11, mono: true }]
   const height = 30 + lines.length * 16
   const body = lines
     .map((l, i) => `<text class="dt" x="10" y="${38 + i * 16}" font-family="${l.mono ? MONO : FONT}" font-size="${l.size}">${xml(l.s)}</text>`)
