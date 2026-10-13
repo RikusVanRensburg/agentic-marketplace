@@ -390,6 +390,9 @@ async function createIntegration($: EngineInterface, state: RunState, repoName: 
 
 async function spawnAgent($: EngineInterface, state: RunState, effect: Extract<Effect, { kind: 'spawn' }>): Promise<void> {
   const cwd = worktreeOf(state, effect.slice, effect.repo)
+  if (!cwd || !(await $.fs.exists(cwd))) {
+    return enqueue($, { kind: 'spawn-failed', key: effect.key, reason: `worktree missing: ${cwd || '(none recorded)'}` })
+  }
   const description = taskNameOf(effect)
   pendingCwd.set(description, cwd)
   const spawned = await $.agent.spawn({
@@ -406,6 +409,12 @@ async function spawnAgent($: EngineInterface, state: RunState, effect: Extract<E
 }
 
 function reportOf(kind: string, input: Record<string, unknown>): Report | string {
+  const base = reportBase(kind, input)
+  if (typeof base === 'string') return base
+  return str(input.cannotRun) ? { ...base, cannotRun: str(input.cannotRun) } : base
+}
+
+function reportBase(kind: string, input: Record<string, unknown>): Report | string {
   const list = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [])
   if (kind === 'dev') return { kind, committed: input.committed === true, summary: str(input.summary), newApis: str(input.newApis), todos: str(input.todos) }
   if (kind === 'qa') {
@@ -691,6 +700,7 @@ export const register: Register = (on, opts) => {
           newApis: { type: 'string' },
           todos: { type: 'string' },
           defects: { type: 'array', items: { type: 'string' } },
+          cannotRun: { type: 'string' },
           criteria: {
             type: 'array',
             items: { type: 'object', properties: { slice: { type: 'string' }, met: { type: 'boolean' }, note: { type: 'string' } }, required: ['slice', 'met'] },

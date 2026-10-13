@@ -51,7 +51,9 @@ export type FixReport = { kind: 'remediate'; committed: boolean; summary: string
 // resolved: the conflict is resolved and committed; otherwise `conflict` says why the two
 // slices' requirements cannot both hold.
 export type ResolveReport = { kind: 'resolve'; resolved: boolean; summary: string; conflict?: string }
-export type Report = DevReport | QaReport | FinalReport | FixReport | ResolveReport
+// cannotRun: the agent could not attempt the work at all (its worktree missing, a tool it
+// needs refused). That is infrastructure, not a verdict: no rung is spent on it.
+export type Report = (DevReport | QaReport | FinalReport | FixReport | ResolveReport) & { cannotRun?: string }
 
 export type SliceState = {
   id: string
@@ -516,6 +518,11 @@ function ended(state: RunState, effects: Effect[], ref: AgentRef, event: Extract
 
   if (!report) {
     failAgent(state, effects, ref, `${ref.role} agent ended without a report (${event.reason})`, now)
+    return
+  }
+
+  if (report.cannotRun) {
+    failAgent(state, effects, ref, `${ref.role} agent could not run: ${report.cannotRun}`, now)
     return
   }
 

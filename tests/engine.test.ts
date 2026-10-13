@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Effect, Event, Report, RunState, Step } from '../hooks/engine'
-import { start, step, totals } from '../hooks/engine'
+import { collidedWith, start, step, totals } from '../hooks/engine'
 import { taskOf } from '../hooks/prompts'
 import type { Plan } from '../hooks/plan'
 
@@ -329,4 +329,22 @@ test('a final QA skipped when a run ended with nothing merged runs once a retry 
   s = step(s, { kind: 'ended', agentId: 'q', reason: 'answer' }, 2).state
   const last = step(s, { kind: 'integrated', slice: '109', isMerged: true, commit: 'c' }, 3)
   expect(last.effects.find(e => e.kind === 'spawn')).toMatchObject({ role: 'final-qa' })
+})
+
+test('a slice that merged after another started counts as collided with it, one merged before does not', () => {
+  const s = start(plan(), config, { completed: [], other: [] }, 'run5', 0).state
+  s.slices['107']!.rounds = [{ round: 1, role: 'dev', rung: config.qa, startedAt: 100 }]
+  s.slices['108']!.mergedAt = 50
+  s.slices['109']!.mergedAt = 200
+  expect(collidedWith(s, '107')).toEqual(['109'])
+})
+
+test('an agent that cannot run is infrastructure: same rung once, then a blocker naming why', () => {
+  const h = harness()
+  h.ev({ kind: 'integration-ready', repo: 'timebase', path: 'D:/r/i' })
+  const dev = spawnOf(h.ev({ kind: 'slice-ready', slice: '109', path: 'D:/r/y', baseSha: 'b0' }))
+  const again = spawnOf(h.finish(dev, { kind: 'dev', committed: false, summary: '', cannotRun: 'worktree missing' }))
+  expect(again).toMatchObject({ role: 'dev', round: 1 })
+  const effects = h.finish(again, { kind: 'dev', committed: false, summary: '', cannotRun: 'worktree missing' })
+  expect(effects.find(e => e.kind === 'blocker')).toMatchObject({ blocker: { reason: expect.stringMatching(/could not run: worktree missing/) } })
 })
