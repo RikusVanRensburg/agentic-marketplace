@@ -280,6 +280,31 @@ describe('plan', () => {
   })
 })
 
+describe('archive', () => {
+  test('a docs path under an archive folder is never cleaned', async () => {
+    const t = parseTable(
+      [
+        '| document | what it covers | status | updated |',
+        '|---|---|---|---|',
+        '| [flow/timebase/x/archive/old.md](flow/timebase/x/archive/old.md) | old | superseded | 2026-09-01 |',
+        '| [flow/timebase/Archive/gone.md](flow/timebase/Archive/gone.md) | gone | current | 2026-09-01 |',
+        '| [flow/timebase/archived-notes.md](flow/timebase/archived-notes.md) | not an archive folder | superseded | 2026-09-01 |',
+      ].join('\n'),
+    )
+    const items = plan({ now: NOW, staleDays: 7, docs: { table: t, files: new Set(['flow/timebase/x/archive/old.md', 'flow/timebase/archived-notes.md']) } })
+    expect(items.map(i => i.id)).toEqual(['flow/timebase/archived-notes.md'])
+  })
+
+  test('check leaves untracked files under an archive folder out', async () => {
+    const d = drive()
+    await d.io.write('D:/docs/flow/timebase/archive/a.md', 'a')
+    await d.io.write('D:/docs/flow/timebase/b/archive/c.md', 'c')
+    const report = await check(d.io, C)
+    expect(report).not.toContain('archive')
+    expect(report).toContain('docs flow/timebase/b: 1 file with no row')
+  })
+})
+
 // ---- actions against the fake disk
 
 describe('testing actions', () => {

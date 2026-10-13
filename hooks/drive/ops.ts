@@ -12,6 +12,7 @@ import {
   findRow,
   formatPorts,
   groupOf,
+  isArchived,
   isDocsStatus,
   isInside,
   isoDate,
@@ -299,7 +300,7 @@ export const check = async (io: Io, c: Config) => {
   }
   if (snap.docs) {
     const tracked = snap.docs.table.rows.map(r => docsId(snap.docs!.table, r))
-    const files = (await walkFiles(io, d.docs)).filter(f => !/^(manifest|claude)\.md$/i.test(f))
+    const files = (await walkFiles(io, d.docs)).filter(f => !/^(manifest|claude)\.md$/i.test(f) && !isArchived(f))
     const groups = new Map<string, number>()
     for (const f of untracked(tracked, files)) groups.set(groupOf(f, 3), (groups.get(groupOf(f, 3)) ?? 0) + 1)
     for (const [g, n] of groups) loose.push(`docs ${g}: ${n} file${n === 1 ? '' : 's'} with no row`)

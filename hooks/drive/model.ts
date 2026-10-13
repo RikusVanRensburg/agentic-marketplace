@@ -96,7 +96,11 @@ export const stackKeyOfFile = (file: string) => {
   return m ? `${m[1]}/${m[2]}/${m[3]}` : undefined
 }
 
-export const findRow = (t: Table, idOf: (t: Table, row: readonly string[]) => string, id: string) =>
+// A docs path with an `archive` folder in it is kept out of the current docs: never
+// cleaned and never reported.
+export const isArchived = (path: string) => slash(path).split('/').slice(0, -1).some(s => s.toLowerCase() === 'archive')
+
+export const findRow =(t: Table, idOf: (t: Table, row: readonly string[]) => string, id: string) =>
   t.rows.findIndex(r => idOf(t, r).toLowerCase() === slash(id).toLowerCase())
 
 // ---- dates
@@ -312,6 +316,7 @@ export const plan = (s: Snapshot): Item[] => {
     for (const row of table.rows) {
       const id = docsId(table, row)
       const status = statusWord(cell(table, row, 'status'))
+      if (isArchived(id)) continue
       if (!filesLower.has(id.toLowerCase())) {
         items.push({ area: 'docs', kind: 'drop-row', id, why: 'row with no file' })
       } else if (status === 'superseded' || status === 'abandoned') {
