@@ -353,6 +353,7 @@ function blockerText(state: RunState, blocker: Blocker): string {
 // to this session so its model can ask them. A slice blocker is also put on its issue.
 async function announce($: EngineInterface, state: RunState, blocker: Blocker): Promise<void> {
   $.ui.toast(`orchestrator: ${blocker.at} blocked: ${blocker.reason}`)
+  await openPane($)
   const repo = repoSlugOf(state)
   if (repo && /^\d+$/.test(blocker.at)) {
     await $.process.run(['gh', 'issue', 'comment', blocker.at, '--repo', repo, '--body-file', '-'], { stdin: blockerText(state, blocker), timeoutMs: 60_000 })
@@ -364,6 +365,11 @@ async function announce($: EngineInterface, state: RunState, blocker: Blocker): 
       `Ask me how to proceed. My answer goes back with: /orchestrator retry ${blocker.at} <answer>`,
     ].join('\n\n'),
   })
+}
+
+// The pane comes up by itself whenever a run starts, resumes or blocks.
+async function openPane($: EngineInterface): Promise<void> {
+  if (!(await $.ui.panes()).some(p => p.id === PANE)) await $.ui.open({ id: PANE, title: 'Orchestrator' })
 }
 
 async function logPath($: EngineInterface, run: string): Promise<string> {
@@ -453,7 +459,7 @@ async function launch($: EngineInterface, input: unknown): Promise<string> {
   await $.store.set(OWNER_KEY, await $.session.id())
   await save($, begun.state)
   perform($, begun.effects)
-  void $.ui.open({ id: PANE, title: 'Orchestrator' })
+  await openPane($)
   return `Launched run ${id}: ${checked.plan.slices.length} slices${closed.completed.length ? `, ${closed.completed.join(', ')} already landed` : ''}. Blockers will reach this session as they happen.`
 }
 
@@ -468,6 +474,7 @@ async function resume($: EngineInterface): Promise<void> {
     else if (!alive.has(ref.agentId)) enqueue($, { kind: 'ended', agentId: ref.agentId, reason: 'lost' })
   }
   perform($, inFlight(current))
+  await openPane($)
 }
 
 const usageOf = (u: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | undefined): Usage | undefined =>
