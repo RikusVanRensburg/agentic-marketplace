@@ -88,3 +88,29 @@ test('details opens the drill-in: recent actions, the latest message, the worktr
     await ui.unmount()
   }
 })
+
+const band = (surface: 'terminal' | 'desktop') =>
+  ({
+    plugin: 'orchestrator',
+    surface,
+    component: 'AbovePrompt',
+    requestId: 'band',
+    viewport: { columns: 100, rows: 30 },
+    props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} },
+  }) as never
+
+test('the band shows the run, its progress and counts, opens the pane and dismisses', async ($, on) => {
+  stub(on)
+  on('ui.render', () => ({ type: 'Text', props: {}, children: [''] }))
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount(band(surface))
+    const all = await drawnText(ui)
+    expect(all).toContain('Payments')
+    expect(all).toContain('1/4 merged · 1 blocked')
+    expect(await ui.find({ type: 'Button', key: 'orch-open' })).toBeDefined()
+    await ui.unmount()
+  }
+  const ui = await $.ui.mount(band('terminal'))
+  await ui.press({ key: 'orch-hide' })
+  expect(await drawnText(ui)).not.toContain('Payments')
+})

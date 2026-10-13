@@ -189,3 +189,43 @@ export function activitySvg(W: number, activity: Activity | undefined, latest: s
     .join('')
   return { height, svg: svg(W, height, `<rect class="tile" x="0" y="0" width="${W}" height="${height}" rx="8"/>${body}`) }
 }
+
+// --- the band above the prompt: one row, like savvy's progress bar
+
+export const BAND_H = 22
+
+export type BandCounts = { merged: number; going: number; blocked: number; slices: number }
+
+export const bandCounts = (view: RunView): BandCounts => ({
+  merged: view.merged,
+  going: view.rows.filter(r => r.group === 'build' || r.group === 'integrate').length,
+  blocked: view.rows.filter(r => r.group === 'blocked').length,
+  slices: view.slices,
+})
+
+export const bandLabel = (view: RunView, c: BandCounts) =>
+  [`${c.merged}/${c.slices} merged`, c.blocked ? `${c.blocked} blocked` : '', view.status === 'running' ? '' : view.status].filter(Boolean).join(' · ')
+
+export function bandSvg(W: number, view: RunView): string {
+  const c = bandCounts(view)
+  const dot = c.blocked ? COLOR.danger : view.status === 'running' ? COLOR.run : COLOR.done
+  const label = bandLabel(view, c)
+  const titleW = Math.min(200, Math.max(60, W * 0.28))
+  const title = fit(view.title, 12, titleW)
+  const labelW = textWidth(label, 12)
+  const x0 = 14 + textWidth(title, 12) + 10
+  const barW = Math.max(40, W - x0 - labelW - 12)
+  const unit = barW / Math.max(1, c.slices)
+  const seg = (from: number, n: number, color: string, isLive = false) =>
+    n > 0 ? `<rect${isLive ? ' class="live"' : ''} x="${x0 + from * unit}" y="7" width="${Math.max(2, n * unit - (from + n < c.slices ? 1 : 0))}" height="8" fill="${color}"/>` : ''
+  return svg(
+    W,
+    BAND_H,
+    `<circle${view.status === 'running' ? ' class="live"' : ''} cx="5" cy="11" r="3.5" fill="${dot}"/>
+${text(14, 15, 12, 't', title, ' font-weight="600"')}
+<defs><clipPath id="bar"><rect x="${x0}" y="7" width="${barW}" height="8" rx="4"/></clipPath></defs>
+<rect class="k" x="${x0}" y="7" width="${barW}" height="8" rx="4"/>
+<g clip-path="url(#bar)">${seg(0, c.merged, COLOR.done)}${seg(c.merged, c.going, COLOR.run, true)}${seg(c.merged + c.going, c.blocked, COLOR.danger)}</g>
+${right(W, 15, 12, 's', label)}`,
+  )
+}

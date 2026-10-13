@@ -13,7 +13,7 @@ import { denyOf } from './guards'
 import type { Closed, Plan } from './plan'
 import { reconcileProblems, validatePlan } from './plan'
 import { SYSTEM, TOOLS, taskOf, typeName } from './prompts'
-import { HEADER_H, LINE_H, PROGRESS_H, activitySvg, blockerSvg, finalLine, headerSvg, mergedLine, progressSvg, waitingLine } from './draw'
+import { BAND_H, HEADER_H, LINE_H, PROGRESS_H, activitySvg, bandCounts, bandLabel, bandSvg, blockerSvg, finalLine, headerSvg, mergedLine, progressSvg, waitingLine } from './draw'
 import { bar, fmtTime, fmtTokens, taskNameOf, viewOf } from './view'
 
 const PLUGIN = 'orchestrator'
@@ -846,21 +846,52 @@ export const register: Register = (on, opts) => {
     const view = await read($, viewAtom)
     const paneUi = await read($, uiAtom)
     if (!view || paneUi.isBandHidden || e.props.hasSurvey) return next(e)
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const width = Math.max(6, Math.min(30, (e.props.bodyColumns || 80) - 60))
-    const color = view.blocked ? 'red' : view.status === 'running' ? 'yellow' : 'green'
+    const ui = $.ui.resolve(e)
+    const { Box, Text, Button } = ui
+    const c = bandCounts(view)
+    const crew = (
+      <Button key="orch-open" label={`×${view.agents}`} plain onPress={() => void $.ui.open({ id: PANE, title: 'Orchestrator' })} />
+    )
+    const dismiss = (
+      <Button key="orch-hide" label="✕" plain role="dismiss" onPress={() => update($, uiAtom, prev => ({ ...prev, isBandHidden: true }))} />
+    )
+
+    if (e.surface === 'desktop' && 'Svg' in ui) {
+      const { Svg } = ui
+      const width = Math.max(180, Math.min(1600, (e.props.bodyColumns || 100) * 8 - 96))
+      return (
+        <Box flexDirection="row" alignItems="center" gap={1}>
+          <Svg source={bandSvg(width, view)} alt={`${view.title}: ${bandLabel(view, c)}`} width={width} height={BAND_H} />
+          {crew}
+          {dismiss}
+        </Box>
+      )
+    }
+
+    const cols = e.props.bodyColumns || 80
+    const titleW = Math.max(8, Math.min(30, view.title.length + 2, Math.floor(cols / 3)))
+    const width = Math.max(6, Math.min(40, cols - titleW - 34))
+    const cells = (n: number) => Math.round((n / Math.max(1, c.slices)) * width)
+    const done = cells(c.merged)
+    const going = Math.min(width - done, cells(c.going))
+    const stuck = Math.min(width - done - going, cells(c.blocked))
     return (
       <Box flexDirection="row" gap={2}>
-        <Text color={color}>●</Text>
-        <Text wrap="truncate-end">{view.title}</Text>
-        <Text color="green">{bar(Math.round((view.merged / Math.max(1, view.slices)) * width), width)}</Text>
-        <Text bold>
-          {view.merged}/{view.slices}
+        <Box width={titleW} flexShrink={0}>
+          <Text color={c.blocked ? 'red' : view.status === 'running' ? 'yellow' : 'green'}>● </Text>
+          <Text bold wrap="truncate-end">
+            {view.title}
+          </Text>
+        </Box>
+        <Text>
+          <Text color="green">{'█'.repeat(done)}</Text>
+          <Text color="yellow">{'█'.repeat(going)}</Text>
+          <Text color="red">{'█'.repeat(stuck)}</Text>
+          <Text dimColor>{'░'.repeat(Math.max(0, width - done - going - stuck))}</Text>
         </Text>
-        {view.blocked ? <Text color="red">{view.blocked} blocked</Text> : null}
-        <Text dimColor>{view.status === 'running' ? `×${view.agents}` : view.status}</Text>
-        <Button key="orch-open" label="pane" plain onPress={() => void $.ui.open({ id: PANE, title: 'Orchestrator' })} />
-        <Button key="orch-hide" label="✕" plain role="dismiss" onPress={() => update($, uiAtom, prev => ({ ...prev, isBandHidden: true }))} />
+        <Text dimColor>{bandLabel(view, c)}</Text>
+        {crew}
+        {dismiss}
       </Box>
     )
   })
