@@ -31,7 +31,8 @@ Needs the `worktree-lifecycle` mod, which creates and later ships the integratio
 5. Slices that pass QA merge one at a time into the integration worktree, each verified with the
    build and full suite. A red suite resets. A conflict aborts and goes to a resolve agent, which
    merges the integration branch into the slice keeping both sides' acceptance criteria, then fresh
-   QA checks the slice and the slices it collided with before the merge is tried again (two
+   QA checks the slice and the slices it collided with, reporting a verdict per slice that the mod
+   enforces in code, before the merge is tried again (two
    rounds, then a blocker). Contradicting requirements are never resolved: they reach you as a
    blocker. The issue closes on a verified merge and the slice's worktree and branch go.
 6. A final QA judges the integrated whole; its findings go to a fixer, and a fresh judge grades each
@@ -61,7 +62,9 @@ takes no effort. A run keeps the settings it launched with.
 - The pane (`/orchestrator pane`, opened on launch) and a band above the prompt.
 - Blockers reach you as they happen: a toast, the status line, a message to the session, and a
   comment on the slice's issue. Unblocked chains keep going.
-- `/orchestrator status | retry <at> <answer> | abort | take`.
+- `/orchestrator status | pane | retry <at> <answer> | drop <slice> | abort | take`. An answer guides
+  how a slice is done and never overrides acceptance criteria; a requirements conflict is settled by
+  dropping one slice, and its dependents stay halted.
 - Every agent round is logged to `~/.claude/orchestrator/runs/<run>.jsonl`: slice, role, mode,
   round, model, effort, verdict, tokens and time.
 

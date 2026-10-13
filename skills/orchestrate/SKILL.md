@@ -76,6 +76,7 @@ A plain plan uses `"source": { "kind": "plain", "text": "<the plan>" }`, short i
 - The pane (`/orchestrator pane`) and the band above the prompt show progress. `orchestrator_status` gives you the same as text.
 - A merge conflict first goes to a resolve agent, which merges the integration branch into the slice keeping both sides' acceptance criteria; fresh QA then checks the slice and the slices it collided with. If the two slices' requirements contradict, it stops and that becomes a blocker.
 - A blocker arrives as a message while the rest of the run continues. Ask the person, then hand the answer back: `/orchestrator retry <slice | final:<repo> | integration:<repo>> <answer>`. The slice resumes on the rung it stopped on, with the answer in its prompt.
+- An answer guides how a slice is done; it never overrides acceptance criteria. A requirements conflict between two slices is settled only by `/orchestrator drop <slice>`, which takes that slice out of the run; whatever depends on it stays halted until it is dropped or retried too.
 - `/orchestrator abort` stops new work; `/orchestrator take` moves a run to this session.
 
 ## After the run

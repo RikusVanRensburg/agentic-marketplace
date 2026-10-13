@@ -43,7 +43,9 @@ export type Round = {
 }
 
 export type DevReport = { kind: 'dev'; committed: boolean; summary: string; newApis?: string; todos?: string }
-export type QaReport = { kind: 'qa'; pass: boolean; defects: string[] }
+// criteria: one verdict per slice QA was asked to check; required after a resolve.
+export type CriterionVerdict = { slice: string; met: boolean; note?: string }
+export type QaReport = { kind: 'qa'; pass: boolean; defects: string[]; criteria?: CriterionVerdict[] }
 export type FinalReport = { kind: 'final-qa'; pass: boolean; findings: string[] }
 export type FixReport = { kind: 'remediate'; committed: boolean; summary: string }
 // resolved: the conflict is resolved and committed; otherwise `conflict` says why the two
@@ -80,6 +82,8 @@ export type SliceState = {
   resolveAttempts?: number
   // The check and QA in progress follow a resolve rather than a dev round.
   isAfterResolve?: boolean
+  // Dropped from the run by the person (/orchestrator drop).
+  isDropped?: boolean
 }
 
 export type FinalPhase = 'idle' | 'judging' | 'fixing' | 'pass' | 'blocked' | 'skipped'
@@ -186,11 +190,33 @@ export type Event =
   | { kind: 'abort' }
   // The person answered a blocker: `at` is a slice id or `final:<repo>`.
   | { kind: 'retry'; at: string; answer: string }
+  // The person took a slice out of the run; its dependents stay halted.
+  | { kind: 'drop'; slice: string }
 
 export type Step = { state: RunState; effects: Effect[] }
 
 // Resolve rounds a conflict gets before it reaches the person.
 export const RESOLVE_ATTEMPTS = 2
+
+// The slices merged after this one started: the ones its merge can collide with.
+export function collidedWith(state: RunState, id: string): string[] {
+  const slice = state.slices[id]
+  const started = slice?.rounds[0]?.startedAt ?? 0
+  return Object.values(state.slices)
+    .filter(s => s.id !== id && s.repo === slice?.repo && s.mergedAt !== undefined && s.mergedAt >= started)
+    .map(s => s.id)
+}
+
+// After a resolve, QA's own pass is not enough: it must report every required slice's
+// criteria as met. A missing or unmet verdict fails it, in code.
+export function unmetCriteria(state: RunState, id: string, report: QaReport): string[] {
+  const required = [id, ...collidedWith(state, id)]
+  return required.flatMap(s => {
+    const verdict = report.criteria?.find(c => c.slice === s)
+    if (!verdict) return [`QA reported no criteria verdict for ${s}`]
+    return verdict.met ? [] : [`${s}'s acceptance criteria no longer hold${verdict.note ? `: ${verdict.note}` : ''}`]
+  })
+}
 
 const ACTIVE: readonly Phase[] = ['starting', 'dev', 'checking', 'qa', 'resolving']
 const UNFINISHED: readonly Phase[] = ['waiting', 'starting', 'dev', 'checking', 'qa', 'queued', 'integrating', 'resolving']
@@ -248,9 +274,21 @@ export function step(prev: RunState, event: Event, now: number): Step {
   const state = clone(prev)
   const effects: Effect[] = []
 
+  if (event.kind === 'drop') {
+    drop(state, effects, event.slice, now)
+    return { state, effects }
+  }
+
   if (event.kind === 'retry' && state.status === 'done') {
     state.status = 'running'
     delete state.endedAt
+    // Anything merged after the reopening makes the old verdicts stale: every final QA runs again.
+    for (const final of Object.values(state.finals)) {
+      final.phase = 'idle'
+      final.round = 0
+      final.findings = []
+      final.infraRetried = false
+    }
   }
 
   if (state.status !== 'running') {
@@ -499,12 +537,14 @@ function ended(state: RunState, effects: Effect[], ref: AgentRef, event: Extract
         blockSlice(state, effects, slice, `requirements conflict with merged work: ${report.conflict || report.summary}`, now, rungLabel(ref.rung))
       }
     } else if (report.kind === 'qa' && slice.isAfterResolve) {
-      if (report.pass) {
+      const unmet = unmetCriteria(state, slice.id, report)
+      if (report.pass && !unmet.length) {
         slice.isAfterResolve = false
         slice.phase = 'queued'
         state.queue.push(slice.id)
       } else {
-        resolveAgain(state, effects, slice, report.defects.length ? report.defects : ['QA rejected the resolved merge without listing defects'], now)
+        const defects = [...report.defects, ...unmet]
+        resolveAgain(state, effects, slice, defects.length ? defects : ['QA rejected the resolved merge without listing defects'], now)
       }
     } else if (report.kind === 'qa') {
       if (report.pass) {
@@ -614,6 +654,7 @@ function startResolve(state: RunState, effects: Effect[], slice: SliceState, def
 
 function resolveAgain(state: RunState, effects: Effect[], slice: SliceState, defects: string[], now: number) {
   if ((slice.resolveAttempts ?? 0) >= RESOLVE_ATTEMPTS) {
+    slice.defects = defects
     blockSlice(state, effects, slice, `the resolved merge failed after ${slice.resolveAttempts} resolve round(s)`, now, undefined, defects)
     return
   }
@@ -739,6 +780,33 @@ function retry(state: RunState, effects: Effect[], at: string, answer: string, n
   } else {
     slice.phase = 'waiting'
   }
+}
+
+// The person dropped a slice: it leaves the run unbuilt, and whatever depended on it stays
+// halted until they drop or retry that too.
+function drop(state: RunState, effects: Effect[], id: string, now: number) {
+  const slice = state.slices[id]
+  if (!slice || ['merged', 'landed', 'integrating', 'descoped'].includes(slice.phase)) return
+  state.queue = state.queue.filter(q => q !== id)
+  state.blockers = state.blockers.filter(b => b.at !== id)
+  for (const ref of Object.values(state.agents)) if (ref.slice === id) delete state.agents[ref.key]
+  slice.phase = 'descoped'
+  slice.isDropped = true
+  slice.blocker = 'dropped by the person'
+  const stopped = new Set([id])
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const other of Object.values(state.slices)) {
+      if (!stopped.has(other.id) && ['waiting', 'halted'].includes(other.phase) && depsOf(state, other.id).some(d => stopped.has(d))) {
+        other.phase = 'halted'
+        other.blocker = `upstream ${id} was dropped`
+        stopped.add(other.id)
+        grew = true
+      }
+    }
+  }
+  if (state.status === 'running') schedule(state, now, effects)
 }
 
 // After a reload: the effects that were running in the module that went away. Each one is

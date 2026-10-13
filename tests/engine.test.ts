@@ -190,7 +190,48 @@ test('a resolved merge is checked, then QA judges it with the collided slice, th
   expect(qa).toMatchObject({ role: 'qa', slice: '107' })
   expect(taskOf(h.state, 'qa', 'timebase', '107', 1, config.qa)).toMatch(/resolved merge with the slices below[\s\S]*109/)
   expect(taskOf(h.state, 'resolve', 'timebase', '107', 1, config.ladders['haiku-first'][0]!)).toMatch(/Conflicting files: src\/a.cs[\s\S]*109/)
-  expect(h.finish(qa, { kind: 'qa', pass: true, defects: [] })).toContainEqual({ kind: 'integrate', slice: '107' })
+  const verdicts = [{ slice: '107', met: true }, { slice: '109', met: true }]
+  expect(h.finish(qa, { kind: 'qa', pass: true, defects: [], criteria: verdicts })).toContainEqual({ kind: 'integrate', slice: '107' })
+})
+
+test('after a resolve, a QA pass without a verdict for every collided slice, or with one unmet, resolves again', () => {
+  const { h, resolve } = conflicted()
+  h.finish(resolve, { kind: 'resolve', resolved: true, summary: 'merged' })
+  const qa = spawnOf(h.ev({ kind: 'dev-checked', slice: '107', isClean: true, isAdvanced: true }))
+  const again = spawnOf(h.finish(qa, { kind: 'qa', pass: true, defects: [], criteria: [{ slice: '107', met: true }] }))
+  expect(again).toMatchObject({ role: 'resolve' })
+  expect(h.slice('107').defects).toEqual(['QA reported no criteria verdict for 109'])
+
+  h.finish(again, { kind: 'resolve', resolved: true, summary: 'merged' })
+  const qa2 = spawnOf(h.ev({ kind: 'dev-checked', slice: '107', isClean: true, isAdvanced: true }))
+  h.finish(qa2, { kind: 'qa', pass: true, defects: [], criteria: [{ slice: '107', met: true }, { slice: '109', met: false, note: 'line 1 changed' }] })
+  expect(h.slice('107')).toMatchObject({ phase: 'blocked', defects: ["109's acceptance criteria no longer hold: line 1 changed"] })
+})
+
+test('drop takes a blocked slice out of the run and keeps its dependents halted', () => {
+  const { h, resolve } = conflicted()
+  h.finish(resolve, { kind: 'resolve', resolved: false, summary: 'cannot', conflict: 'contradiction' })
+  expect(h.slice('108').phase).toBe('halted')
+  h.ev({ kind: 'drop', slice: '107' })
+  expect(h.slice('107')).toMatchObject({ phase: 'descoped', isDropped: true })
+  expect(h.slice('108')).toMatchObject({ phase: 'halted', blocker: 'upstream 107 was dropped' })
+  expect(h.state.blockers.some(b => b.at === '107')).toBe(false)
+})
+
+test('reopening a finished run makes every final QA judge again', () => {
+  const p = plan({ slices: [plan().slices[2]!, { ...plan().slices[0]!, mode: 'sonnet-first', brief: undefined }] })
+  let s = start(p, config, { completed: ['109'], other: [] }, 'run4', 0).state
+  s = step(s, { kind: 'integration-ready', repo: 'timebase', path: 'D:/r/i' }, 1).state
+  s = step(s, { kind: 'slice-ready', slice: '107', path: 'D:/r/x', baseSha: 'b0' }, 1).state
+  for (let i = 0; i < 2; i++) s = step(s, { kind: 'spawn-failed', key: Object.keys(s.agents)[0]!, reason: 'x' }, 1).state
+  const judge = Object.values(s.agents).find(a => a.role === 'final-qa')!
+  s = step(s, { kind: 'spawned', key: judge.key, agentId: 'f' }, 1).state
+  s = step(s, { kind: 'report', agentId: 'f', report: { kind: 'final-qa', pass: true, findings: [] } }, 1).state
+  s = step(s, { kind: 'ended', agentId: 'f', reason: 'answer' }, 1).state
+  expect(s).toMatchObject({ status: 'done', finals: { timebase: { phase: 'pass' } } })
+
+  s = step(s, { kind: 'retry', at: '107', answer: 'go' }, 2).state
+  expect(s.finals.timebase!.phase).toBe('idle')
 })
 
 test('a requirements conflict blocks with its reason and halts the dependents', () => {

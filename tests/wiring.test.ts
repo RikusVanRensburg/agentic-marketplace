@@ -5,7 +5,7 @@ import { inFlight, start, step } from '../hooks/engine'
 import type { Ran, Run } from '../hooks/git'
 import { createSlice, devState, integrate, parseWorktrees, removeSlice } from '../hooks/git'
 import { denyOf, shellDeny } from '../hooks/guards'
-import { taskOf, trailerOf, typeName } from '../hooks/prompts'
+import { SYSTEM, taskOf, trailerOf, typeName } from '../hooks/prompts'
 
 import { config, plan } from './fixture'
 
@@ -219,4 +219,12 @@ test('a merged slice loses its worktree and branch; one not in the integration b
   const unmerged = fakeGit([[/merge-base --is-ancestor/, { exitCode: 1 }]])
   expect(await removeSlice(unmerged.run, 'D:/r', 'D:/r/feat/x', 'feat/x', 'feat/RVR/smoke')).toMatchObject({ isDone: false })
   expect(unmerged.calls).toHaveLength(1)
+})
+
+test('QA is told history is not evidence, and an answer never overrides criteria', () => {
+  const s = running()
+  s.slices['107']!.answer = 'just make it pass'
+  expect(SYSTEM.qa).toMatch(/claims, not evidence/)
+  expect(SYSTEM['final-qa']).toMatch(/claims, not evidence/)
+  expect(taskOf(s, 'dev', 'timebase', '107', 1, config.ladders['haiku-first'][0]!)).toMatch(/never overrides any slice's acceptance criteria/)
 })

@@ -371,7 +371,15 @@ async function spawnAgent($: EngineInterface, state: RunState, effect: Extract<E
 function reportOf(kind: string, input: Record<string, unknown>): Report | string {
   const list = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [])
   if (kind === 'dev') return { kind, committed: input.committed === true, summary: str(input.summary), newApis: str(input.newApis), todos: str(input.todos) }
-  if (kind === 'qa') return typeof input.pass === 'boolean' ? { kind, pass: input.pass, defects: list(input.defects) } : 'qa needs pass'
+  if (kind === 'qa') {
+    if (typeof input.pass !== 'boolean') return 'qa needs pass'
+    const criteria = Array.isArray(input.criteria)
+      ? input.criteria
+          .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+          .map(c => ({ slice: str(c.slice), met: c.met === true, ...(str(c.note) ? { note: str(c.note) } : {}) }))
+      : undefined
+    return { kind, pass: input.pass, defects: list(input.defects), ...(criteria ? { criteria } : {}) }
+  }
   if (kind === 'final-qa') return typeof input.pass === 'boolean' ? { kind, pass: input.pass, findings: list(input.findings) } : 'final-qa needs pass'
   if (kind === 'remediate') return { kind, committed: input.committed === true, summary: str(input.summary) }
   if (kind === 'resolve') return { kind, resolved: input.resolved === true, summary: str(input.summary), conflict: str(input.conflict) }
@@ -611,13 +619,17 @@ export const register: Register = (on, opts) => {
           newApis: { type: 'string' },
           todos: { type: 'string' },
           defects: { type: 'array', items: { type: 'string' } },
+          criteria: {
+            type: 'array',
+            items: { type: 'object', properties: { slice: { type: 'string' }, met: { type: 'boolean' }, note: { type: 'string' } }, required: ['slice', 'met'] },
+          },
           findings: { type: 'array', items: { type: 'string' } },
         },
         required: ['kind'],
       },
       isDeferred: false,
     })
-    await $.command.register({ name: 'orchestrator', description: 'Orchestrator run: status, pane, retry <at> <answer>, abort, take' })
+    await $.command.register({ name: 'orchestrator', description: 'Orchestrator run: status, pane, retry <at> <answer>, drop <slice>, abort, take' })
 
     if (current?.status === 'running') {
       if (isOwner) await resume($)
@@ -710,6 +722,11 @@ export const register: Register = (on, opts) => {
     if (verb === 'abort') {
       enqueue($, { kind: 'abort' })
       return { text: `Run ${current.id} stops starting work. Agents already running finish on their own; their worktrees stay.` }
+    }
+    if (verb === 'drop') {
+      if (!at) return { text: 'Usage: /orchestrator drop <slice>' }
+      await applyNow($, { kind: 'drop', slice: at })
+      return { text: `${at} is dropped from run ${current.id}. Anything that depends on it stays halted until you drop or retry it.` }
     }
     if (verb === 'retry') {
       if (!at || !rest.length) return { text: 'Usage: /orchestrator retry <slice | final:<repo> | integration:<repo>> <answer>' }
