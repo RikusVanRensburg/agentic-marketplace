@@ -742,7 +742,8 @@ function schedule(state: RunState, now: number, effects: Effect[]) {
   if (slices.some(s => UNFINISHED.includes(s.phase))) return
 
   for (const final of Object.values(state.finals)) {
-    if (final.phase !== 'idle') continue
+    // Skipped is decided again: a retry can reopen a run that ended with nothing merged.
+    if (final.phase !== 'idle' && final.phase !== 'skipped') continue
     const repoSlices = slices.filter(s => s.repo === final.repo)
     if (!repoSlices.some(s => DONE.includes(s.phase)) || !state.integration[final.repo]?.isReady) {
       final.phase = 'skipped'

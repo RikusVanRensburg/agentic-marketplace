@@ -213,3 +213,27 @@ test('concurrency caps how many slices run at once', () => {
   const h = harness(p, { ...config, concurrency: 1 })
   expect(h.ev({ kind: 'integration-ready', repo: 'timebase', path: 'D:/r/i' })).toHaveLength(1)
 })
+
+test('a final QA skipped when a run ended with nothing merged runs once a retry lands work', () => {
+  const p = plan({ slices: [plan().slices[2]!] })
+  let s = start(p, config, { completed: [], other: [] }, 'run3', 0).state
+  s = step(s, { kind: 'integration-ready', repo: 'timebase', path: 'D:/r/i' }, 1).state
+  s = step(s, { kind: 'slice-ready', slice: '109', path: 'D:/r/y', baseSha: 'b0' }, 1).state
+  s = step(s, { kind: 'spawn-failed', key: Object.keys(s.agents)[0]!, reason: 'x' }, 1).state
+  s = step(s, { kind: 'spawn-failed', key: Object.keys(s.agents)[0]!, reason: 'x' }, 1).state
+  expect(s.status).toBe('done')
+  expect(s.finals.timebase!.phase).toBe('skipped')
+
+  s = step(s, { kind: 'retry', at: '109', answer: 'go' }, 2).state
+  const devKey = Object.keys(s.agents)[0]!
+  s = step(s, { kind: 'spawned', key: devKey, agentId: 'd' }, 2).state
+  s = step(s, { kind: 'report', agentId: 'd', report: { kind: 'dev', committed: true, summary: 'x' } }, 2).state
+  s = step(s, { kind: 'ended', agentId: 'd', reason: 'answer' }, 2).state
+  s = step(s, { kind: 'dev-checked', slice: '109', isClean: true, isAdvanced: true }, 2).state
+  const qaKey = Object.values(s.agents).find(a => a.role === 'qa')!.key
+  s = step(s, { kind: 'spawned', key: qaKey, agentId: 'q' }, 2).state
+  s = step(s, { kind: 'report', agentId: 'q', report: { kind: 'qa', pass: true, defects: [] } }, 2).state
+  s = step(s, { kind: 'ended', agentId: 'q', reason: 'answer' }, 2).state
+  const last = step(s, { kind: 'integrated', slice: '109', isMerged: true, commit: 'c' }, 3)
+  expect(last.effects.find(e => e.kind === 'spawn')).toMatchObject({ role: 'final-qa' })
+})
