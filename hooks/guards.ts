@@ -11,7 +11,10 @@ const RESERVED: readonly [RegExp, string][] = [
   [/\bgh\s+(release|repo|label|project|workflow|secret|variable|ruleset)\s+(?!view\b|list\b)/, 'GitHub settings and releases are the orchestrator\'s'],
   [/\bgit\b[^;&|\n]*\bbranch\s+(-d|-D|--delete|-m|-M|--move)\b/, 'deleting or renaming branches is the orchestrator\'s'],
   [/\bgit\b[^;&|\n]*\bworktree\s+(add|remove|move|prune)\b/, 'worktrees are the orchestrator\'s'],
-  [/\bgit\b[^;&|\n]*\b(checkout|switch)\b(?![^;&|\n]*--\s)/, 'stay on the branch you were given'],
+  // Switching branches is refused; checking out paths (--, --ours, --theirs, -p) is how a merge
+  // conflict is resolved and stays allowed.
+  [/\bgit\b[^;&|\n]*\bswitch\b/, 'stay on the branch you were given'],
+  [/\bgit\b[^;&|\n]*\bcheckout\b(?![^;&|\n]*(\s--(\s|$)|\s--ours\b|\s--theirs\b|\s-p\b|\s--patch\b))/, 'stay on the branch you were given'],
   [/\bgit\b[^;&|\n]*\bstash\b/, 'the stash stack is shared with other sessions'],
   [/\bgit\b[^;&|\n]*\breset\s+--hard\s+(?!HEAD\b)/, 'reset only to HEAD; history is the orchestrator\'s'],
   [/\bgit\b[^;&|\n]*\brebase\b/, 'history is the orchestrator\'s'],

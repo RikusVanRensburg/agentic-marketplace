@@ -22,6 +22,7 @@ test('the deny-list refuses pushes, tracker writes, branch and worktree changes,
     'git branch -D feat/x',
     'git worktree remove ../x',
     'git checkout main',
+    'git checkout -b side',
     'git switch -c other',
     'git stash',
     'git reset --hard origin/main',
@@ -32,7 +33,7 @@ test('the deny-list refuses pushes, tracker writes, branch and worktree changes,
 })
 
 test('the deny-list lets ordinary work through', () => {
-  for (const command of ['dotnet test', 'git status', 'git add -A && git commit -m "feat: x"', 'git diff HEAD~1', 'git checkout -- src/a.cs', 'git reset --hard HEAD', 'gh issue view 107 --comments', 'gh api repos/o/r/issues/107/comments', 'gh pr view 3']) {
+  for (const command of ['dotnet test', 'git status', 'git add -A && git commit -m "feat: x"', 'git diff HEAD~1', 'git checkout -- src/a.cs', 'git checkout --theirs calc.py', 'git checkout --ours -- calc.py', 'git reset --hard HEAD', 'gh issue view 107 --comments', 'gh api repos/o/r/issues/107/comments', 'gh pr view 3']) {
     expect({ command, why: shellDeny(command, WT) }).toEqual({ command, why: null })
   }
 })
