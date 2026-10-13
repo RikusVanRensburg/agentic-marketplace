@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { FinalRow, SliceRow } from '../types'
+import type { Activity, SliceRow } from '../types'
 
 import type { Config, Rung } from './config'
 import { configOf, rungLabel } from './config'
@@ -13,7 +13,8 @@ import { denyOf } from './guards'
 import type { Closed, Plan } from './plan'
 import { reconcileProblems, validatePlan } from './plan'
 import { SYSTEM, TOOLS, taskOf, typeName } from './prompts'
-import { GLYPH, bar, fmtTime, fmtTokens, viewOf } from './view'
+import { HEADER_H, LINE_H, PROGRESS_H, activitySvg, blockerSvg, finalLine, headerSvg, mergedLine, progressSvg, waitingLine } from './draw'
+import { bar, fmtTime, fmtTokens, taskNameOf, viewOf } from './view'
 
 const PLUGIN = 'orchestrator'
 const RUN_KEY = 'run'
@@ -23,6 +24,7 @@ const PANE = 'orchestrator-run'
 
 const viewAtom = atom({ plugin: 'orchestrator', key: 'view' } as const, null)
 const uiAtom = atom({ plugin: 'orchestrator', key: 'ui' } as const, { expanded: null, isDoneCollapsed: true, isBandHidden: false })
+const activityAtom = atom({ plugin: 'orchestrator', key: 'activity' } as const, {})
 
 type Owned = { run: string; repo: string; branch: string; path: string; kind: 'integration' | 'slice' }
 
@@ -301,7 +303,7 @@ async function createIntegration($: EngineInterface, state: RunState, repoName: 
 
 async function spawnAgent($: EngineInterface, state: RunState, effect: Extract<Effect, { kind: 'spawn' }>): Promise<void> {
   const cwd = worktreeOf(state, effect.slice, effect.repo)
-  const description = `orch ${effect.slice ?? `final ${effect.repo}`} ${effect.role} r${effect.round} #${effect.key.split(':').pop()}`
+  const description = taskNameOf(effect)
   pendingCwd.set(description, cwd)
   const spawned = await $.agent.spawn({
     subagentType: `${PLUGIN}:${typeName(effect.role, effect.rung)}`,
@@ -422,6 +424,27 @@ function statusText(state: RunState): string {
     ...state.blockers.map(b => `BLOCKER ${b.at}: ${b.reason}${b.worktree ? ` (worktree ${b.worktree})` : ''}`),
   ]
   return lines.filter(Boolean).join('\n')
+}
+
+// --- the drill-in
+
+// A tool call in a few words: the command, the file relative to the worktree, the pattern.
+function summaryOf(input: Record<string, unknown>, worktree: string): string {
+  const rel = (path: string) => {
+    const p = path.replace(/\\/g, '/')
+    const w = worktree.replace(/\\/g, '/').replace(/\/$/, '')
+    return p.toLowerCase().startsWith(`${w.toLowerCase()}/`) ? p.slice(w.length + 1) : p
+  }
+  const first = [input.command, input.file_path, input.notebook_path, input.pattern, input.path, input.description].find(v => typeof v === 'string' && v.trim())
+  return typeof first === 'string' ? rel(first).replace(/\s+/g, ' ').slice(0, 120) : ''
+}
+
+async function record($: EngineInterface, at: string, agentId: string, task: string, text: string): Promise<void> {
+  await update($, activityAtom, prev => {
+    const before: Activity | undefined = prev[at]
+    const lines = before && before.agentId === agentId ? before.lines : []
+    return { ...prev, [at]: { agentId, task, lines: [...lines, { at: Date.now(), text }].slice(-20) } }
+  })
 }
 
 // --- launch and resume
@@ -549,10 +572,14 @@ export const register: Register = (on, opts) => {
 
   // The mod approves its own spawns of its own agent types and nothing else: in auto mode a
   // plugin's spawn has no model request for the classifier to judge (ADR 0004).
+  // The spawn is recognised as the mod's own by its description, registered just before the
+  // spawn: a spawn made from a timer does not carry the mod as its origin.
   on('tool.check', { tool: 'Agent' }, async ($, e, next) => {
-    const input = (e.input ?? {}) as { subagent_type?: unknown; subagentType?: unknown }
+    const input = (e.input ?? {}) as { subagent_type?: unknown; subagentType?: unknown; description?: unknown }
     const type = str(input.subagent_type) || str(input.subagentType)
-    if (next.origin.plugin === PLUGIN && type.startsWith(`${PLUGIN}:`)) return { decision: 'allow', reason: 'the orchestrator spawns its own agent types' }
+    const isMine = type.startsWith(`${PLUGIN}:`) && pendingCwd.has(str(input.description))
+    $.ui.log(`orchestrator: tool.check Agent type=${type} origin=${next.origin.plugin} mine=${isMine}`, { to: 'debug' })
+    if (isMine) return { decision: 'allow', reason: 'the orchestrator spawns its own agent types' }
     return next(e)
   })
 
@@ -566,8 +593,11 @@ export const register: Register = (on, opts) => {
   on('tool.call', async ($, e, next) => {
     const ref = agentRef(e.agentId)
     if (!ref || !current) return next(e)
-    const why = denyOf(e.tool, e as unknown as Record<string, unknown>, worktreeOf(current, ref.slice, ref.repo))
-    return why ? { deny: `orchestrator: ${why}` } : next(e)
+    const worktree = worktreeOf(current, ref.slice, ref.repo)
+    const why = denyOf(e.tool, e as unknown as Record<string, unknown>, worktree)
+    if (why) return { deny: `orchestrator: ${why}` }
+    await record($, ref.slice ?? `final:${ref.repo}`, ref.agentId ?? '', taskNameOf(ref), `${e.tool} ${summaryOf(e as unknown as Record<string, unknown>, worktree)}`)
+    return next(e)
   }).catch(($, e, next) => (next.called ? next(e) : isOurs(e.agentId) ? { deny: 'orchestrator: its guard failed' } : next(e)))
 
   on('tool.call', { tool: 'mcp__orchestrator__report' }, async ($, e) => {
@@ -623,128 +653,190 @@ export const register: Register = (on, opts) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const ui = $.ui.resolve(e)
+    const { Box, Text, Button } = ui
     const view = await read($, viewAtom)
     const paneUi = await read($, uiAtom)
+    const activity = await read($, activityAtom)
     if (!view) return <Text dimColor>No orchestrator run.</Text>
 
-    const cols = Math.max(30, e.props.bodyColumns || 60)
-    const barW = Math.max(4, Math.min(12, cols - 48))
+    const rows = (group: string) => view.rows.filter(r => r.group === group)
+    const blocked = rows('blocked')
+    const going = [...rows('build'), ...rows('integrate')]
+    const next = rows('waiting')
+    const merged = rows('done')
     const toggle = (id: string) => update($, uiAtom, prev => ({ ...prev, expanded: prev.expanded === id ? null : id }))
-    const section = (key: string, label: string, count: number) => (
+
+    // The drill-in reads the agent's latest message only for the row that is open.
+    const open = paneUi.expanded
+    const openRow = view.rows.find(r => r.id === open)
+    const openFinal = view.finals.find(f => `final:${f.repo}` === open)
+    const openAgent = openRow?.agentId ?? openFinal?.agentId ?? null
+    let latest = ''
+    if (openAgent) {
+      try {
+        const messages = await $.session.messages({ agentId: openAgent })
+        latest = [...messages].reverse().find(m => m.role === 'assistant' && m.text.trim())?.text.trim() ?? ''
+      } catch {
+        latest = ''
+      }
+    }
+    const footerOf = (r: SliceRow) => [...(r.worktree ? [`worktree ${r.worktree}`] : []), `branch ${r.branch}`, ...r.history]
+    const detailsButton = (id: string) => (
+      <Button key={`row-${id}`} label={open === id ? '▾ details' : '▸ details'} plain onPress={() => toggle(id)} />
+    )
+    const mergedToggle =
+      merged.length > 0 ? (
+        <Button
+          key="done"
+          label={`${paneUi.isDoneCollapsed ? '▸' : '▾'} Merged · ${merged.length}`}
+          plain
+          onPress={() => update($, uiAtom, prev => ({ ...prev, isDoneCollapsed: !prev.isDoneCollapsed }))}
+        />
+      ) : null
+    const label = (key: string, s: string) => (
       <Text key={key} dimColor>
-        {label} · {count}
+        {s}
       </Text>
     )
-    const details = (lines: string[], key: string) => (
-      <Box key={key} flexDirection="column">
-        {lines.map((line, i) => (
-          <Text key={`${key}-${i}`} dimColor wrap="truncate-end">
-            {'    '}
-            {line}
-          </Text>
-        ))}
+
+    if (e.surface === 'desktop' && 'Svg' in ui) {
+      const { Svg } = ui
+      const W = Math.max(240, Math.min(900, (e.props.bodyColumns || 60) * 8 - 8))
+      const drill = (key: string, agentKey: string, footer: string[]) => {
+        const d = activitySvg(W, activity[agentKey], latest, footer)
+        return <Svg key={key} source={d.svg} alt={`${agentKey} details`} width={W} height={d.height} />
+      }
+      return (
+        <Box flexDirection="column" gap={1}>
+          <Svg source={headerSvg(W, view)} alt={`${view.title}: ${view.status}, ${view.merged} of ${view.slices} merged, ${view.blocked} blocked`} width={W} height={HEADER_H} />
+          {blocked.length > 0 && label('h-blocked', `Needs you · ${blocked.length}`)}
+          {blocked.map(r => {
+            const card = blockerSvg(W, r)
+            return (
+              <Box key={`b-${r.id}`} flexDirection="column">
+                <Svg source={card.svg} alt={`${r.id} ${r.title} blocked: ${r.blocker ?? ''}`} width={W} height={card.height} />
+                {detailsButton(r.id)}
+                {open === r.id && drill(`d-${r.id}`, r.id, footerOf(r))}
+              </Box>
+            )
+          })}
+          {going.length > 0 && label('h-going', `In progress · ${going.length}`)}
+          {going.map(r => (
+            <Box key={`p-${r.id}`} flexDirection="column">
+              <Svg source={progressSvg(W, r)} alt={`${r.id} ${r.title}: ${r.phase}, ${r.role ?? ''} ${r.rung ?? ''}`} width={W} height={PROGRESS_H} />
+              {detailsButton(r.id)}
+              {open === r.id && drill(`d-${r.id}`, r.id, footerOf(r))}
+            </Box>
+          ))}
+          {next.length > 0 && label('h-next', `Up next · ${next.length}`)}
+          {next.map(r => (
+            <Svg key={`n-${r.id}`} source={waitingLine(W, r)} alt={`${r.id} ${r.title} waiting`} width={W} height={LINE_H} />
+          ))}
+          {mergedToggle}
+          {!paneUi.isDoneCollapsed && merged.map(r => <Svg key={`m-${r.id}`} source={mergedLine(W, r)} alt={`${r.id} ${r.title} merged`} width={W} height={LINE_H} />)}
+          {label('h-final', 'Final QA')}
+          {view.finals.map(f => (
+            <Box key={`f-${f.repo}`} flexDirection="column">
+              <Svg source={finalLine(W, f)} alt={`final QA ${f.repo}: ${f.phase}`} width={W} height={LINE_H} />
+              {(f.agentId || f.findings.length > 0) && detailsButton(`final:${f.repo}`)}
+              {open === `final:${f.repo}` && drill(`d-final-${f.repo}`, `final:${f.repo}`, [...f.findings.slice(0, 6), ...f.history])}
+            </Box>
+          ))}
+        </Box>
+      )
+    }
+
+    // Terminal and the other surfaces: the same sections in text rows.
+    const cols = Math.max(30, e.props.bodyColumns || 60)
+    const trackW = Math.max(3, Math.min(8, Math.floor((cols - 20) / 3)))
+    const line = (key: string, left: JSX.Element, rightText: string) => (
+      <Box key={key} flexDirection="row" justifyContent="space-between">
+        {left}
+        <Text dimColor>{rightText}</Text>
       </Box>
     )
-
-    const sliceRow = (r: SliceRow) => {
-      const glyph = r.phase === 'halted' ? GLYPH.halted : GLYPH[r.group]
-      const color = r.group === 'blocked' ? 'red' : r.group === 'done' ? 'green' : r.group === 'build' ? 'yellow' : undefined
-      const what =
-        r.group === 'waiting' ? (r.phase === 'halted' ? r.blocker ?? 'halted' : r.waitingOn.length ? `after ${r.waitingOn.join(', ')}` : 'ready')
-        : r.group === 'done' ? `${r.phase}${r.commit ? ` ${r.commit.slice(0, 7)}` : ''}`
-        : r.group === 'integrate' ? (r.phase === 'integrating' ? 'merging · build · suite' : 'queued for merge')
-        : r.group === 'blocked' ? r.blocker ?? 'blocked'
-        : `${r.role ?? ''} ${r.rung ?? ''}`
-      const meta = [`r${r.round}/${r.rungs}`, r.mode, r.runningMs !== null ? fmtTime(r.runningMs) : '', r.tokens ? fmtTokens(r.tokens) : ''].filter(Boolean).join(' · ')
-      const isOpen = paneUi.expanded === r.id
-      const why = [...(r.worktree ? [`worktree kept: ${r.worktree}`] : []), ...r.defects.slice(0, 5), `answer with /orchestrator retry ${r.id} <answer>`]
+    const indent = (key: string, s: string, color?: string) => (
+      <Text key={key} color={color} dimColor={!color} wrap="truncate-end">
+        {'    '}
+        {s}
+      </Text>
+    )
+    const drillText = (key: string, agentKey: string, footer: string[]) => {
+      const a = activity[agentKey]
+      const now = Date.now()
       return (
-        <Box key={r.id} flexDirection="column" marginBottom={1}>
-          <Box flexDirection="row" gap={1}>
-            <Text color={color}>{glyph}</Text>
-            <Button key={`row-${r.id}`} label={`${r.id} ${r.title}`} plain onPress={() => toggle(r.id)} />
-            <Text dimColor wrap="truncate-end">
-              {what}
-            </Text>
-          </Box>
-          <Text dimColor wrap="truncate-end">
-            {'  '}
-            {r.group === 'waiting' || r.group === 'blocked' ? '' : <Text color={color}>{bar(r.stage, 4)} </Text>}
-            {meta}
+        <Box key={key} flexDirection="column" marginBottom={1}>
+          {a && indent(`${key}-task`, a.task)}
+          {(a?.lines ?? []).slice(-8).map((l, i) => indent(`${key}-a${i}`, `${fmtTime(Math.max(0, now - l.at)).padStart(4)}  ${l.text}`))}
+          {latest && indent(`${key}-latest`, `latest: ${latest.replace(/\s+/g, ' ').slice(0, cols * 2)}`)}
+          {footer.map((f, i) => indent(`${key}-f${i}`, f))}
+        </Box>
+      )
+    }
+    const track = (r: SliceRow) =>
+      ['dev', 'QA', 'merge'].map((s, i) => {
+        const n = i + 1
+        const color = n < r.stage ? 'green' : n === r.stage ? 'yellow' : undefined
+        return (
+          <Text key={`${r.id}-t${n}`} color={color} dimColor={!color}>
+            {s} {bar(n <= r.stage ? trackW : 0, trackW)}{'  '}
           </Text>
-          {r.group === 'blocked' && details(why, `${r.id}-why`)}
-          {isOpen && details([`branch ${r.branch}`, ...(r.worktree ? [`worktree ${r.worktree}`] : []), ...r.history], `${r.id}-more`)}
-        </Box>
-      )
-    }
-
-    const finalRow = (f: FinalRow) => {
-      const color = f.phase === 'pass' ? 'green' : f.phase === 'blocked' ? 'red' : f.phase === 'judging' || f.phase === 'fixing' ? 'yellow' : undefined
-      const glyph = f.phase === 'pass' ? '✓' : f.phase === 'blocked' ? '✗' : f.phase === 'idle' || f.phase === 'skipped' ? '◷' : '●'
-      const isOpen = paneUi.expanded === `final:${f.repo}` || f.phase === 'blocked'
-      return (
-        <Box key={`final-${f.repo}`} flexDirection="column" marginBottom={1}>
-          <Box flexDirection="row" gap={1}>
-            <Text color={color}>{glyph}</Text>
-            <Button key={`final-${f.repo}`} label={`final QA ${f.repo}`} plain onPress={() => toggle(`final:${f.repo}`)} />
-            <Text dimColor>
-              {f.phase}
-              {f.round ? ` · remediation r${f.round}` : ''}
-              {f.findings.length ? ` · ${f.findings.length} findings` : ''}
-            </Text>
-          </Box>
-          {isOpen && details([...f.findings.slice(0, 8), ...f.history], `final-${f.repo}-more`)}
-        </Box>
-      )
-    }
-
-    const by = (group: string) => view.rows.filter(r => r.group === group)
-    const done = by('done')
-    const groups: [string, string][] = [
-      ['blocked', 'Blocked'],
-      ['build', 'Build'],
-      ['integrate', 'Integrate'],
-      ['waiting', 'Waiting'],
-    ]
+        )
+      })
 
     return (
       <Box flexDirection="column">
-        <Text bold wrap="truncate-end">
-          {view.title} · {view.status}
-        </Text>
-        <Text wrap="truncate-end">
-          <Text color="green">{bar(Math.round((view.merged / Math.max(1, view.slices)) * barW), barW)}</Text>
-          <Text dimColor>
-            {' '}
-            {view.merged}/{view.slices} merged{view.blocked ? ` · ${view.blocked} blocked` : ''} · {view.agents} agents · {fmtTokens(view.tokens)} tokens ·{' '}
-            {fmtTime(view.durationMs)}
-          </Text>
-        </Text>
+        {line('title', <Text bold wrap="truncate-end">{view.title}</Text>, view.status)}
         <Text dimColor wrap="truncate-end">
           {view.branches.join(' · ')}
         </Text>
+        <Text>
+          Merged <Text bold>{view.merged}/{view.slices}</Text>
+          {'   '}Blocked <Text bold color={view.blocked ? 'red' : undefined}>{view.blocked}</Text>
+          {'   '}Tokens <Text bold>{fmtTokens(view.tokens)}</Text>
+          {'   '}Time <Text bold>{fmtTime(view.durationMs)}</Text>
+        </Text>
         <Box flexDirection="column" marginTop={1}>
-          {groups.map(([group, label]) => {
-            const rows = by(group)
-            return rows.length ? (
-              <Box key={group} flexDirection="column">
-                {section(`h-${group}`, label, rows.length)}
-                {rows.map(sliceRow)}
-              </Box>
-            ) : null
-          })}
-          {done.length > 0 && (
-            <Button
-              key="done"
-              label={`${paneUi.isDoneCollapsed ? '▸' : '▾'} Merged · ${done.length}`}
-              plain
-              onPress={() => update($, uiAtom, prev => ({ ...prev, isDoneCollapsed: !prev.isDoneCollapsed }))}
-            />
+          {blocked.length > 0 && label('h-blocked', `Needs you · ${blocked.length}`)}
+          {blocked.map(r => (
+            <Box key={`b-${r.id}`} flexDirection="column" marginBottom={1}>
+              {line(`b-${r.id}-h`, <Text color="red" bold wrap="truncate-end">✗ {r.id} {r.title}</Text>, `${r.rung ?? ''} · r${r.round}/${r.rungs}`)}
+              {indent(`b-${r.id}-why`, r.blocker ?? 'blocked', 'red')}
+              {r.defects.slice(0, 3).map((d, i) => indent(`b-${r.id}-d${i}`, `· ${d}`, 'red'))}
+              {indent(`b-${r.id}-cmd`, `/orchestrator retry ${r.id} <answer>`, 'red')}
+              {detailsButton(r.id)}
+              {open === r.id && drillText(`d-${r.id}`, r.id, footerOf(r))}
+            </Box>
+          ))}
+          {going.length > 0 && label('h-going', `In progress · ${going.length}`)}
+          {going.map(r => (
+            <Box key={`p-${r.id}`} flexDirection="column" marginBottom={1}>
+              {line(`p-${r.id}-h`, <Text bold wrap="truncate-end"><Text color="yellow">●</Text> {r.id} {r.title}</Text>, [r.runningMs !== null ? fmtTime(r.runningMs) : '', r.tokens ? fmtTokens(r.tokens) : ''].filter(Boolean).join(' · '))}
+              {indent(`p-${r.id}-m`, `${r.mode} · ${r.phase === 'integrating' ? 'merging, then build and suite' : r.phase === 'queued' ? 'queued for merge' : `${r.role ?? ''} ${r.rung ?? ''}`.trim()} · r${r.round}/${r.rungs}`)}
+              <Text>
+                {'    '}
+                {track(r)}
+              </Text>
+              {detailsButton(r.id)}
+              {open === r.id && drillText(`d-${r.id}`, r.id, footerOf(r))}
+            </Box>
+          ))}
+          {next.length > 0 && label('h-next', `Up next · ${next.length}`)}
+          {next.map(r =>
+            line(`n-${r.id}`, <Text dimColor wrap="truncate-end">{r.phase === 'halted' ? '◌' : '◷'} {r.id} {r.title}</Text>, r.phase === 'halted' ? `held: ${r.blocker ?? 'upstream blocked'}` : r.waitingOn.length ? `after ${r.waitingOn.join(', ')}` : 'ready'),
           )}
-          {!paneUi.isDoneCollapsed && done.map(sliceRow)}
-          {section('h-final', 'Final QA', view.finals.length)}
-          {view.finals.map(finalRow)}
+          {mergedToggle}
+          {!paneUi.isDoneCollapsed &&
+            merged.map(r => line(`m-${r.id}`, <Text dimColor wrap="truncate-end"><Text color="green">✓</Text> {r.id} {r.title}</Text>, [r.commit?.slice(0, 7) ?? r.phase, `r${r.round}`].join(' · ')))}
+          {label('h-final', 'Final QA')}
+          {view.finals.map(f => (
+            <Box key={`f-${f.repo}`} flexDirection="column">
+              {line(`f-${f.repo}-h`, <Text dimColor={f.phase === 'idle' || f.phase === 'skipped'} color={f.phase === 'pass' ? 'green' : f.phase === 'blocked' ? 'red' : undefined}>{f.phase === 'pass' ? '✓' : f.phase === 'blocked' ? '✗' : f.phase === 'idle' || f.phase === 'skipped' ? '◷' : '●'} {f.repo}</Text>, [f.phase === 'idle' ? 'waits on the slices' : f.phase, f.round ? `remediation r${f.round}` : '', f.findings.length ? `${f.findings.length} findings` : ''].filter(Boolean).join(' · '))}
+              {(f.agentId || f.findings.length > 0) && detailsButton(`final:${f.repo}`)}
+              {open === `final:${f.repo}` && drillText(`d-final-${f.repo}`, `final:${f.repo}`, [...f.findings.slice(0, 6), ...f.history])}
+            </Box>
+          ))}
         </Box>
       </Box>
     )

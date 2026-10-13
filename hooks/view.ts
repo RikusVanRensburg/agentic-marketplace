@@ -3,7 +3,7 @@
 
 import type { RunView, SliceRow, FinalRow, Group } from '../types'
 import { rungLabel } from './config'
-import type { Phase, Round, RunState, SliceState } from './engine'
+import type { AgentRef, Phase, Round, RunState, SliceState } from './engine'
 import { totals } from './engine'
 
 const GROUP: Record<Phase, Group> = {
@@ -25,6 +25,13 @@ const GROUP: Record<Phase, Group> = {
 const STAGE: Record<Phase, number> = {
   waiting: 0, halted: 0, starting: 0, dev: 1, checking: 1, qa: 2, queued: 3, integrating: 3, merged: 4, landed: 4, descoped: 4, blocked: 0,
 }
+
+// An agent's name in the background task list and the pane: `orch <slice> <role> r<n> #<seq>`.
+export const taskNameOf = (ref: Pick<AgentRef, 'key' | 'slice' | 'repo' | 'role' | 'round'>) =>
+  `orch ${ref.slice ?? `final ${ref.repo}`} ${ref.role} r${ref.round} #${ref.key.split(':').pop()}`
+
+const liveAgent = (state: RunState, slice: string | undefined, repo: string) =>
+  Object.values(state.agents).find(a => (slice ? a.slice === slice : !a.slice && a.repo === repo))
 
 const tokensOf = (rounds: Round[]) => rounds.reduce((sum, r) => sum + (r.usage ? r.usage.input + r.usage.output + r.usage.cacheRead + r.usage.cacheWrite : 0), 0)
 
@@ -64,7 +71,13 @@ function rowOf(state: RunState, slice: SliceState, now: number): SliceRow {
     branch: slice.branch,
     commit: slice.commit ?? null,
     history: historyOf(slice.rounds),
+    ...agentFields(state, slice.id, slice.repo),
   }
+}
+
+function agentFields(state: RunState, slice: string | undefined, repo: string) {
+  const ref = liveAgent(state, slice, repo)
+  return { agentId: ref?.agentId ?? null, task: ref ? taskNameOf(ref) : null }
 }
 
 export function viewOf(state: RunState, now: number): RunView {
@@ -75,6 +88,7 @@ export function viewOf(state: RunState, now: number): RunView {
     round: f.round,
     findings: f.findings,
     history: historyOf(f.rounds),
+    ...agentFields(state, undefined, f.repo),
   }))
 
   return {

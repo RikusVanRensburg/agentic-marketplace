@@ -24,9 +24,15 @@ export type SliceRow = {
   branch: string
   commit: string | null
   history: string[]
+  // The agent running for the slice now, and its name in the background task list.
+  agentId: string | null
+  task: string | null
 }
 
-export type FinalRow = { repo: string; phase: string; round: number; findings: string[]; history: string[] }
+export type FinalRow = { repo: string; phase: string; round: number; findings: string[]; history: string[]; agentId: string | null; task: string | null }
+
+// What one agent has done lately, recorded from its tool calls, for the drill-in.
+export type Activity = { agentId: string; task: string; lines: { at: number; text: string }[] }
 
 export type RunView = {
   id: string
@@ -48,6 +54,6 @@ export type PaneUi = { expanded: string | null; isDoneCollapsed: boolean; isBand
 
 declare module 'claude-code' {
   interface PluginState {
-    orchestrator: { view: RunView | null; ui: PaneUi }
+    orchestrator: { view: RunView | null; ui: PaneUi; activity: Record<string, Activity> }
   }
 }
