@@ -358,6 +358,12 @@ async function createIntegration($: EngineInterface, state: RunState, repoName: 
   let path: string
 
   if (existing) {
+    // The lifecycle mod stamps who created a branch. A worktree it made for this mod is ours
+    // even when the record never landed (a reload cut the create short after git finished).
+    const stamped = await run(['git', '-C', repo.root, 'config', '--get', `branch.${integration.branch}.lifecycleOwner`])
+    if (!(await isOwned($, existing)) && stamped.stdout.trim() === PLUGIN && isLayoutPath(repo.root, integration.branch, existing)) {
+      await own($, { run: state.id, repo: repoName, branch: integration.branch, path: existing, kind: 'integration' })
+    }
     if (!(await isOwned($, existing))) {
       return enqueue($, {
         kind: 'integration-failed',
