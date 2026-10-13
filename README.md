@@ -67,6 +67,8 @@ takes no effort. A run keeps the settings it launched with.
   dropping one slice, and its dependents stay halted.
 - Every agent round is logged to `~/.claude/orchestrator/runs/<run>.jsonl`: slice, role, mode,
   round, model, effort, verdict, tokens and time.
+- `/orchestrator stats` summarises every run's log: per start mode, how often QA passes on the
+  first round, rounds to pass, tokens and dev time; per role and rung, pass rate, tokens and time.
 
 ## What its agents may not do
 
@@ -88,6 +90,7 @@ the current session.
 
 ## Known limits
 
-- Each agent's final answer also lands in the session as a hand-back message; the agents answer
-  one word to keep that small.
+- The mod answers its agents' hand-backs itself, so their final reports do not land in the session
+  as messages; everything they report goes through the report tool. `/orchestrator status` counts
+  the hand-backs held.
 - One run at a time.

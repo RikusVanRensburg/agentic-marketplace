@@ -13,6 +13,8 @@ import { denyOf } from './guards'
 import type { Closed, Plan } from './plan'
 import { overlapProblems, reconcileProblems, validatePlan } from './plan'
 import { SYSTEM, TOOLS, taskOf, typeName } from './prompts'
+import type { LogRow } from './stats'
+import { parseLog, statsText } from './stats'
 import { BAND_H, HEADER_H, LINE_H, PROGRESS_H, activitySvg, bandCounts, bandLabel, bandSvg, blockerSvg, finalLine, headerSvg, mergedLine, progressSvg, waitingLine } from './draw'
 import { bar, fmtTime, fmtTokens, taskNameOf, viewOf } from './view'
 
@@ -64,6 +66,8 @@ const APPROVED = { decision: 'allow' as const, reason: 'the orchestrator spawns 
 // the commands and launch all drain it.
 const pendingSpawns: Extract<Effect, { kind: 'spawn' }>[] = []
 let isFlushing = false
+// Hand-backs of the mod's agents answered by the mod instead of reaching the session.
+let handbacksHeld = 0
 
 // --- the host
 
@@ -450,6 +454,21 @@ async function appendLog($: EngineInterface, run: string, entry: unknown): Promi
   await $.fs.write(path, `${before}${JSON.stringify({ ...(entry as object), at: new Date().toISOString() })}\n`)
 }
 
+// Every run's round log, summarised by start mode and by rung.
+async function statsOfLogs($: EngineInterface): Promise<string> {
+  const dir = (await logPath($, 'x')).replace(/\/x\.jsonl$/, '')
+  let rows: LogRow[] = []
+  try {
+    for (const entry of await $.fs.list(dir)) {
+      if (!entry.name.endsWith('.jsonl')) continue
+      rows = rows.concat(parseLog(String(await $.fs.read(`${dir}/${entry.name}`))))
+    }
+  } catch {
+    return 'No orchestrator rounds logged yet.'
+  }
+  return statsText(rows)
+}
+
 async function finish($: EngineInterface, state: RunState): Promise<void> {
   const t = totals(state, Date.now())
   const finals = Object.values(state.finals).map(f => `${f.repo}: final QA ${f.phase}`).join(', ')
@@ -482,6 +501,7 @@ function statusText(state: RunState): string {
     }),
     ...Object.values(state.finals).map(f => `- final QA ${f.repo}: ${f.phase}${f.findings.length ? `, ${f.findings.length} findings` : ''}`),
     ...state.blockers.map(b => `BLOCKER ${b.at}: ${b.reason}${b.worktree ? ` (worktree ${b.worktree})` : ''}`),
+    `Agent hand-backs held back from this session since the mod loaded: ${handbacksHeld}.`,
   ]
   return lines.filter(Boolean).join('\n')
 }
@@ -629,7 +649,7 @@ export const register: Register = (on, opts) => {
       },
       isDeferred: false,
     })
-    await $.command.register({ name: 'orchestrator', description: 'Orchestrator run: status, pane, retry <at> <answer>, drop <slice>, abort, take' })
+    await $.command.register({ name: 'orchestrator', description: 'Orchestrator run: status, pane, stats, retry <at> <answer>, drop <slice>, abort, take' })
 
     if (current?.status === 'running') {
       if (isOwner) await resume($)
@@ -660,6 +680,12 @@ export const register: Register = (on, opts) => {
   on('tool.call', async ($, e, next) => {
     const ref = agentRef(e.agentId)
     if (!ref || !current) return next(e)
+    if (e.tool === 'SubagentHandback') {
+      // The report tool already carries the result; the hand-back would only land in the
+      // session as one more message per agent.
+      handbacksHeld += 1
+      return { result: 'The orchestrator already has your report. Your turn is done.' }
+    }
     const worktree = worktreeOf(current, ref.slice, ref.repo)
     const why = denyOf(e.tool, e as unknown as Record<string, unknown>, worktree)
     if (why) return { deny: `orchestrator: ${why}` }
@@ -707,6 +733,7 @@ export const register: Register = (on, opts) => {
   on('command.run', { command: 'orchestrator' }, async ($, e) => {
     await flushSpawns($)
     const [verb = 'status', at = '', ...rest] = e.args.trim().split(/\s+/)
+    if (verb === 'stats') return { text: await statsOfLogs($) }
     if (verb === 'take') {
       if (!current || current.status !== 'running') return { text: 'No running orchestrator run.' }
       isOwner = true
