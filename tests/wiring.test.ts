@@ -188,3 +188,21 @@ test('after a reload, the effects that were running go again', () => {
     { kind: 'create-slice', slice: '109' },
   ])
 })
+
+test('a slice whose QA could not start resumes QA on retry, keeping the dev commit', () => {
+  let s = running()
+  const devKey = Object.keys(s.agents)[0]!
+  s = step(s, { kind: 'spawned', key: devKey, agentId: 'd1' }, 1).state
+  s = step(s, { kind: 'report', agentId: 'd1', report: { kind: 'dev', committed: true, summary: 'x' } }, 1).state
+  s = step(s, { kind: 'ended', agentId: 'd1', reason: 'answer' }, 1).state
+  s = step(s, { kind: 'dev-checked', slice: '107', isClean: true, isAdvanced: true }, 1).state
+  for (const n of [1, 2]) {
+    const qaKey = Object.values(s.agents).find(a => a.role === 'qa')!.key
+    s = step(s, { kind: 'spawn-failed', key: qaKey, reason: `refused ${n}` }, 1).state
+  }
+  expect(s.slices['107']).toMatchObject({ phase: 'blocked', stoppedIn: 'qa', stoppedOnInfra: true })
+
+  const { state, effects } = step(s, { kind: 'retry', at: '107', answer: 'approval fixed' }, 2)
+  expect(state.slices['107']!.phase).toBe('qa')
+  expect(effects.find(e => e.kind === 'spawn')).toMatchObject({ role: 'qa', round: 1 })
+})

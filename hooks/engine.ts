@@ -67,6 +67,8 @@ export type SliceState = {
   answer?: string
   // The phase the slice was in when it blocked, so an answer resumes it from there.
   stoppedIn?: Phase
+  // True when an agent could not run (refused, no report twice), not when its work failed.
+  stoppedOnInfra?: boolean
 }
 
 export type FinalPhase = 'idle' | 'judging' | 'fixing' | 'pass' | 'blocked' | 'skipped'
@@ -518,6 +520,7 @@ function failHard(state: RunState, effects: Effect[], ref: AgentRef, reason: str
   const slice = ref.slice ? state.slices[ref.slice] : undefined
   if (slice) {
     blockSlice(state, effects, slice, reason, now, rungLabel(ref.rung))
+    slice.stoppedOnInfra = true
     return
   }
   const final = state.finals[ref.repo]
@@ -580,6 +583,7 @@ function blockSlice(state: RunState, effects: Effect[], slice: SliceState, reaso
   if (state.integrating === slice.id) state.integrating = null
   state.queue = state.queue.filter(id => id !== slice.id)
   slice.stoppedIn = slice.phase
+  slice.stoppedOnInfra = false
   slice.phase = 'blocked'
   slice.blocker = reason
   block(state, effects, slice.id, reason, now, rung, defects ?? slice.defects ?? undefined, slice.worktree)
@@ -655,6 +659,10 @@ function retry(state: RunState, effects: Effect[], at: string, answer: string, n
     // The work passed QA; only the merge or its verify failed, so it queues again.
     slice.phase = 'queued'
     state.queue.push(slice.id)
+  } else if (slice.stoppedOnInfra && slice.stoppedIn === 'qa' && slice.worktree) {
+    // QA never ran: the dev's commit stands, so QA goes again, not dev.
+    slice.phase = 'qa'
+    spawn(state, effects, 'qa', slice.repo, slice.id, slice.round, state.config.qa, now)
   } else if (slice.worktree) {
     spawnDev(state, effects, slice, now)
   } else {

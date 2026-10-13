@@ -23,7 +23,7 @@ const OWNED_KEY = 'owned'
 const PANE = 'orchestrator-run'
 
 const viewAtom = atom({ plugin: 'orchestrator', key: 'view' } as const, null)
-const uiAtom = atom({ plugin: 'orchestrator', key: 'ui' } as const, { expanded: null, isDoneCollapsed: true, isBandHidden: false })
+const uiAtom = atom({ plugin: 'orchestrator', key: 'ui' } as const, { expanded: null, isDoneCollapsed: true, isBandHidden: false, pulse: 0 })
 const activityAtom = atom({ plugin: 'orchestrator', key: 'activity' } as const, {})
 
 type Owned = { run: string; repo: string; branch: string; path: string; kind: 'integration' | 'slice' }
@@ -50,6 +50,34 @@ const worktreeOf = (state: RunState, slice: string | undefined, repo: string) =>
 const isWindowsPath = (path: string) => /^[a-zA-Z]:/.test(path)
 
 const str = (value: unknown) => (typeof value === 'string' ? value : '')
+
+// --- temporary trace for the spawn approval (smoke run)
+const traceLines: string[] = []
+async function trace($: EngineInterface, line: string): Promise<void> {
+  traceLines.push(`${new Date().toISOString()} ${line}`)
+  try {
+    await $.fs.write('C:/Users/RikusvanRensburg/AppData/Local/Temp/claude/D--src-flow/65eb657f-ffc2-4a53-9258-4281360faa7d/scratchpad/orch-trace.log', traceLines.join('\n'))
+  } catch {
+    // tracing never breaks the run
+  }
+}
+
+// The mod's own spawn: one of its agent types, with the description it registered just before.
+const isOwnSpawn = (raw: unknown) => {
+  const input = (raw ?? {}) as { subagent_type?: unknown; subagentType?: unknown; description?: unknown }
+  const type = str(input.subagent_type) || str(input.subagentType)
+  return type.startsWith(`${PLUGIN}:`) && pendingCwd.has(str(input.description))
+}
+const APPROVED = { decision: 'allow' as const, reason: 'the orchestrator spawns its own agent types' }
+// Spawns wait here until a hook of the mod is running: the engine leaves the mod's own hooks
+// (spawn approval, the worktree as cwd) out of a spawn made from a timer, so every spawn is
+// made inside a live hook. Renders of the band and pane, the agents' calls and turn ends,
+// the commands and launch all drain it.
+const pendingSpawns: Extract<Effect, { kind: 'spawn' }>[] = []
+let isFlushing = false
+
+// Which path each hook took for the last spawn, for the trace.
+const via = { check: 'none', spawn: 'none' }
 
 // --- the host
 
@@ -112,14 +140,43 @@ async function registerTypes($: EngineInterface, config: Config): Promise<void> 
 // --- the event loop
 
 function enqueue($: EngineInterface, event: Event): void {
-  chain = chain.then(() => apply($, event)).catch(err => $.ui.log(`orchestrator: ${String(err)}`, { to: 'debug' }))
+  chain = chain.then(() => apply($, event, false)).catch(err => $.ui.log(`orchestrator: ${String(err)}`, { to: 'debug' }))
 }
 
-async function apply($: EngineInterface, event: Event): Promise<void> {
+// For a hook that is still running: the event applies now, and its spawns happen inside the
+// hook's own dispatch, where the engine still runs the mod's spawn hooks.
+async function applyNow($: EngineInterface, event: Event): Promise<void> {
+  const turn = chain.then(() => apply($, event, true))
+  chain = turn.catch(err => $.ui.log(`orchestrator: ${String(err)}`, { to: 'debug' }))
+  await turn
+}
+
+async function apply($: EngineInterface, event: Event, isLive: boolean): Promise<void> {
   if (!current || !isOwner) return
   const { state, effects } = step(current, event, Date.now())
   await save($, state)
-  perform($, effects)
+  if (!isLive) return perform($, effects)
+  // Spawns now, in order; the rest of the batch keeps its order in the background.
+  const later: Effect[] = []
+  for (const effect of effects) {
+    if (effect.kind === 'spawn' && !later.length) pendingSpawns.push(effect)
+    else later.push(effect)
+  }
+  await flushSpawns($)
+  perform($, later)
+}
+
+async function flushSpawns($: EngineInterface): Promise<void> {
+  if (isFlushing || !pendingSpawns.length) return
+  isFlushing = true
+  try {
+    while (pendingSpawns.length) {
+      const effect = pendingSpawns.shift() as Extract<Effect, { kind: 'spawn' }>
+      await carryOut($, effect).catch(err => failed($, effect, String(err)))
+    }
+  } finally {
+    isFlushing = false
+  }
 }
 
 async function save($: EngineInterface, state: RunState): Promise<void> {
@@ -146,6 +203,11 @@ function perform($: EngineInterface, effects: Effect[]): void {
   $.clock.after(0, () => {
     void (async () => {
       for (const effect of effects) {
+        if (effect.kind === 'spawn') {
+          pendingSpawns.push(effect)
+          await update($, uiAtom, prev => ({ ...prev, pulse: (prev.pulse ?? 0) + 1 }))
+          continue
+        }
         try {
           await carryOut($, effect)
         } catch (err) {
@@ -305,12 +367,16 @@ async function spawnAgent($: EngineInterface, state: RunState, effect: Extract<E
   const cwd = worktreeOf(state, effect.slice, effect.repo)
   const description = taskNameOf(effect)
   pendingCwd.set(description, cwd)
+  await trace($, `spawn ${description} type=${PLUGIN}:${typeName(effect.role, effect.rung)}`)
   const spawned = await $.agent.spawn({
     subagentType: `${PLUGIN}:${typeName(effect.role, effect.rung)}`,
     description,
     prompt: taskOf(state, effect.role, effect.repo, effect.slice, effect.round, effect.rung),
   })
   pendingCwd.delete(description)
+  await trace($, `spawn result check=${via.check} spawnHook=${via.spawn} ${JSON.stringify(spawned).slice(0, 200)}`)
+  via.check = 'none'
+  via.spawn = 'none'
   if (spawned.deny !== undefined || !spawned.agentId) {
     return enqueue($, { kind: 'spawn-failed', key: effect.key, reason: spawned.deny ?? 'no agent id' })
   }
@@ -482,6 +548,7 @@ async function launch($: EngineInterface, input: unknown): Promise<string> {
   await $.store.set(OWNER_KEY, await $.session.id())
   await save($, begun.state)
   perform($, begun.effects)
+  await flushSpawns($)
   await openPane($)
   return `Launched run ${id}: ${checked.plan.slices.length} slices${closed.completed.length ? `, ${closed.completed.join(', ')} already landed` : ''}. Blockers will reach this session as they happen.`
 }
@@ -574,18 +641,23 @@ export const register: Register = (on, opts) => {
   // plugin's spawn has no model request for the classifier to judge (ADR 0004).
   // The spawn is recognised as the mod's own by its description, registered just before the
   // spawn: a spawn made from a timer does not carry the mod as its origin.
-  on('tool.check', { tool: 'Agent' }, async ($, e, next) => {
-    const input = (e.input ?? {}) as { subagent_type?: unknown; subagentType?: unknown; description?: unknown }
-    const type = str(input.subagent_type) || str(input.subagentType)
-    const isMine = type.startsWith(`${PLUGIN}:`) && pendingCwd.has(str(input.description))
-    $.ui.log(`orchestrator: tool.check Agent type=${type} origin=${next.origin.plugin} mine=${isMine}`, { to: 'debug' })
-    if (isMine) return { decision: 'allow', reason: 'the orchestrator spawns its own agent types' }
-    return next(e)
+  on('tool.check', { tool: 'Agent' }, ($, e, next) => {
+    via.check = 'body'
+    return isOwnSpawn(e.input) ? APPROVED : next(e)
+  }).catch(($, e, next) => {
+    // A spawn made after the hook that began the work returned reaches the mod's own hooks as
+    // a re-entry; the handler decides from the event alone.
+    via.check = `handler:${next.error.kind}`
+    return isOwnSpawn(e.input) ? APPROVED : next(e)
   })
 
   on('agent.spawn', ($, e, next) => {
+    via.spawn = 'body'
     const cwd = pendingCwd.get(e.description)
     return cwd && e.subagentType.startsWith(`${PLUGIN}:`) ? next({ ...e, cwd }) : next(e)
+  }).catch(($, e, next) => {
+    via.spawn = `handler:${next.error.kind}`
+    return next(e)
   })
 
   // Whatever the mode or the person's allow rules, the mod's agents do not push, write to the
@@ -596,9 +668,19 @@ export const register: Register = (on, opts) => {
     const worktree = worktreeOf(current, ref.slice, ref.repo)
     const why = denyOf(e.tool, e as unknown as Record<string, unknown>, worktree)
     if (why) return { deny: `orchestrator: ${why}` }
+    await flushSpawns($)
     await record($, ref.slice ?? `final:${ref.repo}`, ref.agentId ?? '', taskNameOf(ref), `${e.tool} ${summaryOf(e as unknown as Record<string, unknown>, worktree)}`)
     return next(e)
-  }).catch(($, e, next) => (next.called ? next(e) : isOurs(e.agentId) ? { deny: 'orchestrator: its guard failed' } : next(e)))
+  }).catch(($, e, next) => {
+    const ref = agentRef(e.agentId)
+    if (!ref || !current) return next(e)
+    if (next.error.kind === 're-entry') {
+      // Reached as a re-entry: run the guard's own check from the event alone.
+      const why = denyOf(e.tool, e as unknown as Record<string, unknown>, worktreeOf(current, ref.slice, ref.repo))
+      return why ? { deny: `orchestrator: ${why}` } : next(e)
+    }
+    return next.called ? next(e) : { deny: 'orchestrator: its guard failed' }
+  })
 
   on('tool.call', { tool: 'mcp__orchestrator__report' }, async ($, e) => {
     const input = e as unknown as Record<string, unknown>
@@ -614,6 +696,7 @@ export const register: Register = (on, opts) => {
   on('tool.call', { tool: 'mcp__orchestrator__status' }, async () => ({ result: current ? statusText(current) : 'No orchestrator run.' }))
 
   on('turn.complete', async ($, e, next) => {
+    await flushSpawns($)
     if (e.agentId && isOurs(e.agentId)) {
       const reason: EndReason = e.reason === 'answer' || e.reason === 'aborted' || e.reason === 'refusal' ? e.reason : 'error'
       enqueue($, { kind: 'ended', agentId: e.agentId, reason, durationMs: e.durationMs, ...(e.usage ? { usage: usageOf(e.usage) as Usage } : {}) })
@@ -627,6 +710,7 @@ export const register: Register = (on, opts) => {
   })
 
   on('command.run', { command: 'orchestrator' }, async ($, e) => {
+    await flushSpawns($)
     const [verb = 'status', at = '', ...rest] = e.args.trim().split(/\s+/)
     if (verb === 'take') {
       if (!current || current.status !== 'running') return { text: 'No running orchestrator run.' }
@@ -646,13 +730,14 @@ export const register: Register = (on, opts) => {
     }
     if (verb === 'retry') {
       if (!at || !rest.length) return { text: 'Usage: /orchestrator retry <slice | final:<repo> | integration:<repo>> <answer>' }
-      enqueue($, { kind: 'retry', at, answer: rest.join(' ') })
+      await applyNow($, { kind: 'retry', at, answer: rest.join(' ') })
       return { text: `${at} goes again with your answer.` }
     }
     return { text: statusText(current) }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    await flushSpawns($)
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
     const view = await read($, viewAtom)
@@ -843,6 +928,7 @@ export const register: Register = (on, opts) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    await flushSpawns($)
     const view = await read($, viewAtom)
     const paneUi = await read($, uiAtom)
     if (!view || paneUi.isBandHidden || e.props.hasSurvey) return next(e)

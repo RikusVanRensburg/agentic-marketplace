@@ -50,7 +50,8 @@ export type RunView = {
   blockers: { at: string; reason: string }[]
 }
 
-export type PaneUi = { expanded: string | null; isDoneCollapsed: boolean; isBandHidden: boolean }
+// pulse: bumped to make the band and pane redraw, which drains queued spawns.
+export type PaneUi = { expanded: string | null; isDoneCollapsed: boolean; isBandHidden: boolean; pulse: number }
 
 declare module 'claude-code' {
   interface PluginState {
