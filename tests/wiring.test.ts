@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Effect, RunState } from '../hooks/engine'
 import { inFlight, start, step } from '../hooks/engine'
 import type { Ran, Run } from '../hooks/git'
-import { createSlice, devState, integrate, parseWorktrees } from '../hooks/git'
+import { createSlice, devState, integrate, parseWorktrees, removeSlice } from '../hooks/git'
 import { denyOf, shellDeny } from '../hooks/guards'
 import { taskOf, trailerOf, typeName } from '../hooks/prompts'
 
@@ -205,4 +205,17 @@ test('a slice whose QA could not start resumes QA on retry, keeping the dev comm
   const { state, effects } = step(s, { kind: 'retry', at: '107', answer: 'approval fixed' }, 2)
   expect(state.slices['107']!.phase).toBe('qa')
   expect(effects.find(e => e.kind === 'spawn')).toMatchObject({ role: 'qa', round: 1 })
+})
+
+test('a merged slice loses its worktree and branch; one not in the integration branch keeps both', async () => {
+  const git = fakeGit([])
+  expect(await removeSlice(git.run, 'D:/r', 'D:/r/feat/x', 'feat/x', 'feat/RVR/smoke')).toEqual({ isDone: true })
+  expect(git.calls).toEqual([
+    'git -C D:/r merge-base --is-ancestor refs/heads/feat/x refs/heads/feat/RVR/smoke',
+    'git -C D:/r worktree remove --force D:/r/feat/x',
+    'git -C D:/r branch -D feat/x',
+  ])
+  const unmerged = fakeGit([[/merge-base --is-ancestor/, { exitCode: 1 }]])
+  expect(await removeSlice(unmerged.run, 'D:/r', 'D:/r/feat/x', 'feat/x', 'feat/RVR/smoke')).toMatchObject({ isDone: false })
+  expect(unmerged.calls).toHaveLength(1)
 })

@@ -51,17 +51,6 @@ const isWindowsPath = (path: string) => /^[a-zA-Z]:/.test(path)
 
 const str = (value: unknown) => (typeof value === 'string' ? value : '')
 
-// --- temporary trace for the spawn approval (smoke run)
-const traceLines: string[] = []
-async function trace($: EngineInterface, line: string): Promise<void> {
-  traceLines.push(`${new Date().toISOString()} ${line}`)
-  try {
-    await $.fs.write('C:/Users/RikusvanRensburg/AppData/Local/Temp/claude/D--src-flow/65eb657f-ffc2-4a53-9258-4281360faa7d/scratchpad/orch-trace.log', traceLines.join('\n'))
-  } catch {
-    // tracing never breaks the run
-  }
-}
-
 // The mod's own spawn: one of its agent types, with the description it registered just before.
 const isOwnSpawn = (raw: unknown) => {
   const input = (raw ?? {}) as { subagent_type?: unknown; subagentType?: unknown; description?: unknown }
@@ -75,9 +64,6 @@ const APPROVED = { decision: 'allow' as const, reason: 'the orchestrator spawns 
 // the commands and launch all drain it.
 const pendingSpawns: Extract<Effect, { kind: 'spawn' }>[] = []
 let isFlushing = false
-
-// Which path each hook took for the last spawn, for the trace.
-const via = { check: 'none', spawn: 'none' }
 
 // --- the host
 
@@ -284,7 +270,8 @@ async function carryOut($: EngineInterface, effect: Effect): Promise<void> {
       const slice = state.slices[effect.slice]
       const repo = slice ? state.plan.repos[slice.repo] : undefined
       if (!slice?.worktree || !repo || !(await isOwned($, slice.worktree))) return
-      const removed = await removeSlice(run, repo.root, slice.worktree, slice.branch)
+      const integration = state.integration[slice.repo]?.branch ?? ''
+      const removed = await removeSlice(run, repo.root, slice.worktree, slice.branch, integration)
       if (removed.isDone) await disown($, slice.worktree)
       else $.ui.toast(`orchestrator: could not remove ${slice.branch}: ${removed.reason}`)
       return
@@ -367,16 +354,12 @@ async function spawnAgent($: EngineInterface, state: RunState, effect: Extract<E
   const cwd = worktreeOf(state, effect.slice, effect.repo)
   const description = taskNameOf(effect)
   pendingCwd.set(description, cwd)
-  await trace($, `spawn ${description} type=${PLUGIN}:${typeName(effect.role, effect.rung)}`)
   const spawned = await $.agent.spawn({
     subagentType: `${PLUGIN}:${typeName(effect.role, effect.rung)}`,
     description,
     prompt: taskOf(state, effect.role, effect.repo, effect.slice, effect.round, effect.rung),
   })
   pendingCwd.delete(description)
-  await trace($, `spawn result check=${via.check} spawnHook=${via.spawn} ${JSON.stringify(spawned).slice(0, 200)}`)
-  via.check = 'none'
-  via.spawn = 'none'
   if (spawned.deny !== undefined || !spawned.agentId) {
     return enqueue($, { kind: 'spawn-failed', key: effect.key, reason: spawned.deny ?? 'no agent id' })
   }
@@ -428,7 +411,7 @@ async function announce($: EngineInterface, state: RunState, blocker: Blocker): 
   }
   void $.prompt.submit({
     text: [
-      `[orchestrator] ${blocker.at} is blocked and its chain has stopped; the rest of run ${state.id} keeps going.`,
+      `[orchestrator] ${blocker.at} is blocked and its chain has stopped${Object.keys(state.agents).length || state.queue.length || state.integrating ? `; the rest of run ${state.id} keeps going` : ''}.`,
       blockerText(state, blocker),
       `Ask me how to proceed. My answer goes back with: /orchestrator retry ${blocker.at} <answer>`,
     ].join('\n\n'),
@@ -641,24 +624,15 @@ export const register: Register = (on, opts) => {
   // plugin's spawn has no model request for the classifier to judge (ADR 0004).
   // The spawn is recognised as the mod's own by its description, registered just before the
   // spawn: a spawn made from a timer does not carry the mod as its origin.
-  on('tool.check', { tool: 'Agent' }, ($, e, next) => {
-    via.check = 'body'
-    return isOwnSpawn(e.input) ? APPROVED : next(e)
-  }).catch(($, e, next) => {
-    // A spawn made after the hook that began the work returned reaches the mod's own hooks as
-    // a re-entry; the handler decides from the event alone.
-    via.check = `handler:${next.error.kind}`
-    return isOwnSpawn(e.input) ? APPROVED : next(e)
-  })
+  // Reached as a re-entry, the handler decides from the event alone.
+  on('tool.check', { tool: 'Agent' }, ($, e, next) => (isOwnSpawn(e.input) ? APPROVED : next(e))).catch(($, e, next) =>
+    isOwnSpawn(e.input) ? APPROVED : next(e),
+  )
 
   on('agent.spawn', ($, e, next) => {
-    via.spawn = 'body'
     const cwd = pendingCwd.get(e.description)
     return cwd && e.subagentType.startsWith(`${PLUGIN}:`) ? next({ ...e, cwd }) : next(e)
-  }).catch(($, e, next) => {
-    via.spawn = `handler:${next.error.kind}`
-    return next(e)
-  })
+  }).catch(($, e, next) => next(e))
 
   // Whatever the mode or the person's allow rules, the mod's agents do not push, write to the
   // tracker, touch branches or worktrees, or leave their worktree.

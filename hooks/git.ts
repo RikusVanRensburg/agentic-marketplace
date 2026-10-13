@@ -125,13 +125,16 @@ export async function integrate(run: Run, shell: Shell, integration: string, bra
   return commit ? { isMerged: true, commit } : { isMerged: false, failure: 'cannot read the merge commit' }
 }
 
-// After a verified merge: the worktree goes first (build output and all), then the branch,
-// with -d so git itself confirms it is merged.
-export async function removeSlice(run: Run, root: string, path: string, branch: string): Promise<Outcome<{}>> {
+// After a verified merge: the worktree goes first (build output and all), then the branch.
+// `branch -d` measures against HEAD or the upstream, and neither is the integration branch, so
+// the merge is confirmed here first and the branch deleted with -D.
+export async function removeSlice(run: Run, root: string, path: string, branch: string, integration: string): Promise<Outcome<{}>> {
+  const merged = await run(['git', '-C', root, 'merge-base', '--is-ancestor', `refs/heads/${branch}`, `refs/heads/${integration}`])
+  if (merged.exitCode !== 0) return { isDone: false, reason: `${branch} is not in ${integration}; left in place` }
   const removed = await run(['git', '-C', root, 'worktree', 'remove', '--force', path], { timeoutMs: 120_000 })
   if (removed.exitCode !== 0) return { isDone: false, reason: removed.stderr.trim() || 'git worktree remove failed' }
-  const deleted = await run(['git', '-C', root, 'branch', '-d', branch])
-  return deleted.exitCode === 0 ? { isDone: true } : { isDone: false, reason: deleted.stderr.trim() || 'git branch -d failed' }
+  const deleted = await run(['git', '-C', root, 'branch', '-D', branch])
+  return deleted.exitCode === 0 ? { isDone: true } : { isDone: false, reason: deleted.stderr.trim() || 'git branch -D failed' }
 }
 
 // The worktree holding a branch, when one does.
