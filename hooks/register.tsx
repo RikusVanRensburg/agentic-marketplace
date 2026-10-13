@@ -144,8 +144,39 @@ async function registerTypes($: EngineInterface, config: Config): Promise<void> 
 
 // --- the event loop
 
+// Events go through an inbox in the store, one key each, so none is lost when a reload sends
+// it to a copy of the module that no longer drives the run: whichever copy drives the run
+// applies the inbox, in order.
+const INBOX = 'inbox/'
+let inboxSeq = 0
+
 function enqueue($: EngineInterface, event: Event): void {
-  chain = chain.then(() => apply($, event, false)).catch(err => $.ui.log(`orchestrator: ${String(err)}`, { to: 'debug' }))
+  inboxSeq += 1
+  const key = `${INBOX}${String(Date.now()).padStart(15, '0')}-${String(inboxSeq).padStart(6, '0')}-${GENERATION}`
+  chain = chain
+    .then(async () => {
+      await $.store.set(key, event)
+      await drain($)
+    })
+    .catch(err => $.ui.log(`orchestrator: ${String(err)}`, { to: 'debug' }))
+}
+
+async function drain($: EngineInterface): Promise<void> {
+  if (!current || !isOwner) return
+  if ((await $.store.get(GENERATION_KEY)) !== GENERATION) {
+    isOwner = false
+    return
+  }
+  const keys = (await $.store.keys()).filter(k => k.startsWith(INBOX)).sort()
+  for (const key of keys) {
+    const event = (await $.store.get(key)) as Event | undefined
+    await $.store.delete(key)
+    if (event) await apply($, event, false)
+  }
+}
+
+function drainLater($: EngineInterface): void {
+  chain = chain.then(() => drain($)).catch(err => $.ui.log(`orchestrator: ${String(err)}`, { to: 'debug' }))
 }
 
 // For a hook that is still running: the event applies now, and its spawns happen inside the
@@ -159,7 +190,8 @@ async function applyNow($: EngineInterface, event: Event): Promise<void> {
 async function apply($: EngineInterface, event: Event, isLive: boolean): Promise<void> {
   if (!current || !isOwner) return
   const { state, effects } = step(current, event, Date.now())
-  await save($, state)
+  // A copy that no longer drives the run neither saves nor acts.
+  if (!(await save($, state))) return
   if (!isLive) return perform($, effects)
   // Spawns now, in order; the rest of the batch keeps its order in the background.
   const later: Effect[] = []
@@ -197,14 +229,15 @@ function noticeWaiting($: EngineInterface): void {
   $.ui.status('orch waiting: open the pane (/orchestrator pane)')
 }
 
-async function save($: EngineInterface, state: RunState): Promise<void> {
+async function save($: EngineInterface, state: RunState): Promise<boolean> {
   if ((await $.store.get(GENERATION_KEY)) !== GENERATION) {
     isOwner = false
-    return
+    return false
   }
   current = state
   await $.store.set(RUN_KEY, state)
   await redraw($)
+  return true
 }
 
 async function redraw($: EngineInterface): Promise<void> {
@@ -212,7 +245,12 @@ async function redraw($: EngineInterface): Promise<void> {
   const state = current
   await update($, viewAtom, () => (state ? viewOf(state, Date.now()) : null))
   noticeWaiting($)
-  if (state?.status === 'running' && !ticker) ticker = $.clock.every(5000, () => void redraw($))
+  if (state?.status === 'running' && !ticker) {
+    ticker = $.clock.every(5000, () => {
+      void redraw($)
+      drainLater($)
+    })
+  }
   if (state?.status !== 'running' && ticker) {
     ticker.cancel()
     ticker = null
@@ -499,7 +537,7 @@ async function appendLog($: EngineInterface, run: string, entry: unknown): Promi
   } catch {
     before = ''
   }
-  await $.fs.write(path, `${before}${JSON.stringify({ ...(entry as object), at: new Date().toISOString() })}\n`)
+  await $.fs.write(path, `${before}${JSON.stringify({ ...(entry as object), loggedAt: new Date().toISOString() })}\n`)
 }
 
 // Every run's round log, summarised by start mode and by rung.
@@ -638,6 +676,7 @@ async function resume($: EngineInterface): Promise<void> {
   }
   if (unseen.length) $.clock.after(120_000, () => void recheckUnseen($, unseen))
   perform($, inFlight(current))
+  drainLater($)
   await openPane($)
 }
 
