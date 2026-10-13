@@ -1,8 +1,28 @@
 {
   "name": "rr-mods",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "RR's personal Claude Code mods",
   "author": { "name": "RR" },
   "repository": "https://github.com/flow-software/flow-agentic-resources",
-  "license": "MIT"
+  "license": "MIT",
+  "userConfig": {
+    "driveRoot": {
+      "type": "string",
+      "title": "Drive root",
+      "description": "The drive holding testing, docker and docs, for the drive mod",
+      "default": "D:/"
+    },
+    "staleDays": {
+      "type": "number",
+      "title": "Stale after (days)",
+      "description": "A running test run untouched, or a docker stack up, this long is put in the cleanup plan",
+      "default": 7
+    },
+    "nudge": {
+      "type": "boolean",
+      "title": "Nudge at session start",
+      "description": "Show a toast when the drive has something to clean",
+      "default": true
+    }
+  }
 }

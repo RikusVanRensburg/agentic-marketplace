@@ -1,1 +1,1 @@
-{ "modules": ["./tree.tsx"] }
+{ "modules": ["./index.ts"] }
