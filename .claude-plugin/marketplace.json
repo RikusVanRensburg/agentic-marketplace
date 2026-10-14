@@ -8,11 +8,6 @@
   },
   "plugins": [
     {
-      "name": "rr-core",
-      "source": "./plugins/skills/rr-core",
-      "description": "RR's core session-setup skills, always installed, invoked explicitly"
-    },
-    {
       "name": "rr-stable",
       "source": "./plugins/skills/rr-stable",
       "description": "RR's personal workflows and skills"
