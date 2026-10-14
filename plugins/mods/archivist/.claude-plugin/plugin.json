@@ -1,0 +1,8 @@
+{
+  "name": "archivist",
+  "version": "0.0.1",
+  "description": "Placeholder for the archivist's mechanical side in code; it does nothing yet",
+  "author": { "name": "RR" },
+  "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
+  "license": "MIT"
+}
