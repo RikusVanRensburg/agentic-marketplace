@@ -1,0 +1,17 @@
+{
+  "name": "rr-stable",
+  "description": "RR's personal workflows and skills",
+  "version": "1.12.0",
+  "author": {
+    "name": "RR"
+  },
+  "repository": "https://github.com/flow-software/flow-agentic-resources",
+  "license": "MIT",
+  "keywords": ["flow", "personal", "rr"],
+  "skills": "./skills/",
+  "commands": [],
+  "agents": [],
+  "hooks": {},
+  "mcpServers": {},
+  "lspServers": {}
+}
