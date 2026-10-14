@@ -1,9 +1,9 @@
 {
   "name": "orchestrator",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Runs a multi-issue plan through subagents: per-slice dev and isolated QA on escalating model ladders, verified one-at-a-time integration, final QA with remediation, live blockers",
   "author": { "name": "RR" },
-  "repository": "https://github.com/flow-software/flow-agentic-resources",
+  "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
   "types": "./types/index.d.ts",
   "dependencies": ["worktree-lifecycle"],

@@ -1,11 +1,11 @@
 {
   "name": "rr-testing",
   "description": "RR's skills under testing",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "author": {
     "name": "RR"
   },
-  "repository": "https://github.com/flow-software/flow-agentic-resources",
+  "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
   "keywords": ["flow", "personal", "rr", "testing"],
   "skills": "./skills/",

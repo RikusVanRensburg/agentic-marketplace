@@ -1,0 +1,46 @@
+{
+  "name": "agentic-marketplace",
+  "owner": {
+    "name": "Rikus van Rensburg"
+  },
+  "metadata": {
+    "description": "RR's personal Claude Code skills and mods"
+  },
+  "plugins": [
+    {
+      "name": "rr-core",
+      "source": "./plugins/rr-core",
+      "description": "RR's core session-setup skills, always installed, invoked explicitly"
+    },
+    {
+      "name": "rr-stable",
+      "source": "./plugins/rr-stable",
+      "description": "RR's personal workflows and skills"
+    },
+    {
+      "name": "rr-testing",
+      "source": "./plugins/rr-testing",
+      "description": "RR's skills under testing"
+    },
+    {
+      "name": "rr-workshop",
+      "source": "./plugins/rr-workshop",
+      "description": "Two run pipelines on GitHub Issues: wayfinding, spec, issues, then implementation by Workflow fan-out or serial relay"
+    },
+    {
+      "name": "drive",
+      "source": "./mods/drive",
+      "description": "Keeps the drive's testing, docker and docs folders to their manifests"
+    },
+    {
+      "name": "worktree-lifecycle",
+      "source": "./mods/worktree-lifecycle",
+      "description": "Branch and worktree lifecycle for bare-clone repos: start, ship on your yes, merge notice, housekeeping and layout guards"
+    },
+    {
+      "name": "orchestrator",
+      "source": "./mods/orchestrator",
+      "description": "Runs a multi-issue plan through subagents on escalating model ladders, with isolated QA, verified integration and live blockers"
+    }
+  ]
+}

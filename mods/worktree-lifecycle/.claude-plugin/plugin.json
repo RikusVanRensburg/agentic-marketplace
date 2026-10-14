@@ -1,9 +1,9 @@
 {
   "name": "worktree-lifecycle",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Branch and worktree lifecycle for bare-clone repos: start work, ship a draft PR on your yes, hear about the merge, housekeep when you say so, and guard the layout",
   "author": { "name": "RR" },
-  "repository": "https://github.com/flow-software/flow-agentic-resources",
+  "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
   "types": "./types/index.d.ts"
 }

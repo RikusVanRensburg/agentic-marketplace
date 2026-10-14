@@ -11,7 +11,8 @@ Needs the `worktree-lifecycle` mod, which creates and later ships the integratio
 ## Install
 
 ```
-/plugin install orchestrator --marketplace flow-software/flow-agentic-resources
+/plugin marketplace add RikusVanRensburg/agentic-marketplace
+/plugin install orchestrator@agentic-marketplace
 ```
 
 ## A run

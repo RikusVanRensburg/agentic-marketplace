@@ -9,7 +9,8 @@ It knows nothing about orchestration. Another mod can call it through `$.worktre
 ## Install
 
 ```
-/plugin install worktree-lifecycle --marketplace flow-software/flow-agentic-resources
+/plugin marketplace add RikusVanRensburg/agentic-marketplace
+/plugin install worktree-lifecycle@agentic-marketplace
 ```
 
 ## Commands
