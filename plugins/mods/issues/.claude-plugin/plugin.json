@@ -1,10 +1,18 @@
 {
   "name": "issues",
-  "version": "0.1.0",
-  "description": "The mechanical side of GitHub issues in code: create, fill, link and label with every field verified, and duplicates closed only on your command",
-  "author": { "name": "RR" },
+  "version": "0.1.1",
+  "description": "Six tools (issue_labels, issue_create, issue_fill, issue_link, label_ensure, issue_consolidate) that do the gh steps for GitHub issues and check each landed; a duplicate closes only on /issues consolidate",
+  "author": {
+    "name": "RR"
+  },
+  "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/mods/issues",
   "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
+  "keywords": [
+    "github",
+    "issues",
+    "mod"
+  ],
   "userConfig": {
     "reservedFamilies": {
       "type": "string",

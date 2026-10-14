@@ -1,15 +1,18 @@
 {
   "name": "docs-ledger",
-  "description": "Keep in-progress engineering docs in the repo: the archivist and its .ledger/",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "description": "The archivist skill, agent and hooks: a ledger in .ledger/ that keeps in-progress engineering docs current for later sessions",
   "author": {
     "name": "RR"
   },
+  "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/skills/docs-ledger",
   "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
   "keywords": [
     "docs",
-    "ledger"
+    "ledger",
+    "archivist",
+    "skills"
   ],
   "skills": "./skills/",
   "agents": [

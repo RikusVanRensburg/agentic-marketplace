@@ -1,12 +1,23 @@
 {
   "name": "orchestrator",
-  "version": "0.1.1",
-  "description": "Runs a multi-issue plan through subagents: per-slice dev and isolated QA on escalating model ladders, verified one-at-a-time integration, final QA with remediation, live blockers",
-  "author": { "name": "RR" },
+  "version": "0.1.2",
+  "description": "/orchestrate runs a multi-issue plan through subagents: dev and isolated QA per slice on escalating model ladders, verified one-at-a-time integration, final QA. Needs worktree-lifecycle",
+  "author": {
+    "name": "RR"
+  },
+  "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/mods/orchestrator",
   "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
+  "keywords": [
+    "orchestration",
+    "subagents",
+    "qa",
+    "mod"
+  ],
   "types": "./types/index.d.ts",
-  "dependencies": ["worktree-lifecycle"],
+  "dependencies": [
+    "worktree-lifecycle"
+  ],
   "userConfig": {
     "sonnetFirst": {
       "type": "string",
@@ -36,7 +47,10 @@
       "type": "string",
       "title": "On a model change",
       "description": "When a climb changes model, continue on the branch with QA's defects, or start fresh from the integration branch",
-      "options": ["continue", "fresh"],
+      "options": [
+        "continue",
+        "fresh"
+      ],
       "default": "continue"
     },
     "concurrency": {

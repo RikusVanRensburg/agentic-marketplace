@@ -1,15 +1,18 @@
 {
   "name": "github-issues",
-  "description": "File, triage and archive GitHub issues: quick issues, duplicate triage, and the librarian that shelves repo docs as closed issues",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "description": "Skills to file, triage and archive GitHub issues: quick-issue, issue-triage and librarian. The issues mod does their gh steps",
   "author": {
     "name": "RR"
   },
+  "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/skills/github-issues",
   "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
   "keywords": [
     "github",
-    "issues"
+    "issues",
+    "triage",
+    "skills"
   ],
   "skills": "./skills/",
   "agents": [

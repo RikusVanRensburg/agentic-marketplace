@@ -1,15 +1,17 @@
 {
   "name": "defending-findings",
-  "description": "Guilty until proven innocent for findings: defend a finding before acting on, citing or summarizing it",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "description": "The defending-findings skill: a finding is defended, attacked and calibrated before anything acts on it",
   "author": {
     "name": "RR"
   },
+  "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/skills/defending-findings",
   "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
   "keywords": [
     "review",
-    "findings"
+    "findings",
+    "skills"
   ],
   "skills": "./skills/"
 }

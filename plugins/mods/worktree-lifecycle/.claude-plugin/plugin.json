@@ -1,9 +1,18 @@
 {
   "name": "worktree-lifecycle",
-  "version": "0.1.4",
-  "description": "Branch and worktree lifecycle for bare-clone repos: start work, ship a draft PR on your yes, hear about the merge, housekeep when you say so, and guard the layout",
-  "author": { "name": "RR" },
+  "version": "0.1.5",
+  "description": "/wt and worktree_* tools for bare-clone repos: start work, ship a draft PR on your yes, hear about the merge, housekeep when you say so, and guard the layout",
+  "author": {
+    "name": "RR"
+  },
+  "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/mods/worktree-lifecycle",
   "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
+  "keywords": [
+    "git",
+    "worktree",
+    "pull-request",
+    "mod"
+  ],
   "types": "./types/index.d.ts"
 }
