@@ -1,0 +1,17 @@
+{
+  "name": "rr-core",
+  "description": "RR's core session-setup skills — always installed, invoked explicitly",
+  "version": "0.3.0",
+  "author": {
+    "name": "RR"
+  },
+  "repository": "https://github.com/flow-software/flow-agentic-resources",
+  "license": "MIT",
+  "keywords": ["flow", "personal", "rr", "core", "session-setup"],
+  "skills": "./skills/",
+  "commands": [],
+  "agents": [],
+  "hooks": {},
+  "mcpServers": {},
+  "lspServers": {}
+}
