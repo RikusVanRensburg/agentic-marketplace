@@ -200,7 +200,7 @@ const guard = async ($: EngineInterface, c: Config, path: string) => {
   })
   if (!hit) return undefined
   const tool = { testing: 'testing_run', docker: 'docker_stack', docs: 'docs_index' }[hit]
-  return `${manifestOf(c, hit)} is kept by the rr-mods drive mod. Use the ${tool} tool (or /drive) so the row and its folder change together.`
+  return `${manifestOf(c, hit)} is kept by the drive mod. Use the ${tool} tool (or /drive) so the row and its folder change together.`
 }
 
 export const register: Register = (on, options) => {
@@ -217,7 +217,7 @@ export const register: Register = (on, options) => {
   })
 
   for (const tool of TOOLS) {
-    on('tool.call', { tool: `mcp__rr-mods__${tool.name}` }, async ($, e) => {
+    on('tool.call', { tool: `mcp__drive__${tool.name}` }, async ($, e) => {
       const { text, isError } = await answer(() => tool.run(ioOf($), c, e as unknown as Input))
       return isError ? { deny: text } : { result: text }
     })
@@ -226,10 +226,10 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const deny = await guard($, c, e.file_path)
     return deny ? { deny } : next(e)
-  }).catch(($, e, next) => (next.called ? next(e) : { deny: 'rr-mods: the manifest guard failed.' }))
+  }).catch(($, e, next) => (next.called ? next(e) : { deny: 'drive: the manifest guard failed.' }))
 
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
     const deny = await guard($, c, e.file_path)
     return deny ? { deny } : next(e)
-  }).catch(($, e, next) => (next.called ? next(e) : { deny: 'rr-mods: the manifest guard failed.' }))
+  }).catch(($, e, next) => (next.called ? next(e) : { deny: 'drive: the manifest guard failed.' }))
 }

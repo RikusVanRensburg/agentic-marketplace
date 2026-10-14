@@ -1,9 +1,9 @@
 {
-  "name": "rr-mods",
-  "version": "0.1.3",
-  "description": "RR's personal Claude Code mods",
+  "name": "drive",
+  "version": "0.2.0",
+  "description": "Keeps the drive's testing, docker and docs folders to their manifests: /drive, its tools, and a cleanup you approve",
   "author": { "name": "RR" },
-  "repository": "https://github.com/flow-software/flow-agentic-resources",
+  "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
   "userConfig": {
     "driveRoot": {
