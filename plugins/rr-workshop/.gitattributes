@@ -1,0 +1,5 @@
+# Workflow scripts must stay LF-only and printable-ASCII so Claude Code's
+# Workflow tool can launch them: the approval-dialog safety layer rejects any
+# script whose content contains CR or other control/non-ASCII characters.
+# A Windows checkout must not reintroduce CRLF.
+*.js text eol=lf
