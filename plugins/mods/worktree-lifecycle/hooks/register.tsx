@@ -1,14 +1,40 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PromptOrigin, Register } from 'claude-code'
 
-import type { WorktreeCleanPlan, WorktreeOutcome, WorktreePending, WorktreePr, WorktreePrepared, WorktreeShipPlan } from '../types'
+import type {
+  WorktreeCleanPlan,
+  WorktreeCreateArgs,
+  WorktreeCreated,
+  WorktreeOutcome,
+  WorktreePending,
+  WorktreePr,
+  WorktreePrepared,
+  WorktreeScope,
+  WorktreeShipPlan,
+} from '../types'
 import { hasRef, lifecycleKeys, repoAt, setKey, type Run } from './git'
 import { gitCalls, layoutDeny, segmentsOf, stashVerdict, worktreeAddOf } from './guards'
 import { PLUGIN, check, create, list, prOf, prepareClean, prepareShip, runClean, runShip, type Ctx } from './lifecycle'
 import { join, looksLikeWindows, samePath } from './paths'
+import {
+  OTHER_BRANCH,
+  OTHER_REPO,
+  adopt,
+  afterClean,
+  labelOf,
+  nameOf,
+  pickBranch,
+  pickRepo,
+  promptText,
+  refresh,
+  scopeAt,
+  summaryOf,
+  type Io,
+} from './working'
 
 const pending = atom({ plugin: 'worktree-lifecycle', key: 'pending' } as const, [])
 const busy = atom({ plugin: 'worktree-lifecycle', key: 'busy' } as const, null)
+const scope = atom({ plugin: 'worktree-lifecycle', key: 'scope' } as const, null)
 
 // What the model's tool calls carry, read without trusting their shape.
 const str = (value: unknown) => (typeof value === 'string' && value !== '' ? value : undefined)
@@ -47,6 +73,107 @@ async function ctxOf($: EngineInterface, caller: string): Promise<Ctx> {
   }
 }
 
+async function ioOf($: EngineInterface): Promise<Io> {
+  const ctx = await ctxOf($, PLUGIN)
+
+  return {
+    run: ctx.run,
+    exists: ctx.exists,
+    dirs: async path => (await $.fs.list(path)).filter(one => one.kind === 'dir').map(one => one.name),
+    isWindows: ctx.isWindows,
+  }
+}
+
+// Where a lifecycle step looks when nobody named a folder: the working branch's worktree, or
+// its repo while it has none; the session's own folder while nothing is picked.
+async function aimOf($: EngineInterface): Promise<{ cwd: string; base?: string }> {
+  const working = ((await read($, scope)) ?? (await refreshScope($)))?.working ?? null
+
+  return working === null ? { cwd: await $.session.cwd() } : { cwd: working.path ?? working.root, base: working.branch }
+}
+
+// Every create goes through here, so a worktree made in the working repo becomes the working branch.
+async function createAimed($: EngineInterface, args: WorktreeCreateArgs, caller: string): Promise<WorktreeOutcome<WorktreeCreated>> {
+  const aim = await aimOf($)
+  const aimed = args.cwd === undefined ? { ...args, cwd: aim.cwd, base: args.base ?? aim.base } : args
+  const made = await create(await ctxOf($, caller), aimed, await $.session.cwd())
+
+  if (made.isDone) {
+    const current = await read($, scope)
+    const adopted = current === null ? null : await adopt(await ioOf($), current, made)
+    if (adopted !== null) await update($, scope, () => adopted)
+  }
+
+  return made
+}
+
+// Read again from git; with nothing known yet, from the folder the session opened. A reload
+// keeps what was picked, since `$.state` outlives the module.
+async function refreshScope($: EngineInterface): Promise<WorktreeScope | null> {
+  const current = await read($, scope)
+  const fresh = current === null ? await scopeAt(await ioOf($), await $.session.cwd()) : await refresh(await ioOf($), current)
+
+  if (fresh !== current) {
+    await update($, scope, () => fresh)
+  }
+
+  return fresh
+}
+
+// The person picked in the band. The model hears of it at once, and from the system prompt after.
+async function setScope($: EngineInterface, next: WorktreeScope): Promise<void> {
+  const before = (await read($, scope))?.working ?? null
+  await update($, scope, () => next)
+
+  if (next.working !== null && (before?.branch !== next.working.branch || before.root !== next.working.root)) {
+    const text = `[${PLUGIN}] The person set the working environment: ${summaryOf(next.working)}.`
+    await $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } })
+  }
+}
+
+async function chooseRepo($: EngineInterface, root: string): Promise<void> {
+  const current = await read($, scope)
+
+  if (current !== null && root !== '') {
+    const picked = await pickRepo(await ioOf($), current, root)
+    await update($, scope, () => picked)
+  }
+}
+
+async function chooseBranch($: EngineInterface, branch: string): Promise<void> {
+  const current = await read($, scope)
+
+  if (current !== null && branch.trim() !== '') {
+    await setScope($, await pickBranch(await ioOf($), current, branch.trim()))
+  }
+}
+
+// The collapsed band's dropdown: another worktree, or back to the pickers.
+async function chooseWorking($: EngineInterface, value: string): Promise<void> {
+  const current = await read($, scope)
+
+  if (current === null) {
+    return
+  }
+
+  if (value === OTHER_BRANCH) {
+    await update($, scope, () => ({ ...current, isPicking: true, note: null }))
+  } else if (value === OTHER_REPO) {
+    await update($, scope, () => ({ ...current, root: null, branches: [], isPicking: true, note: null }))
+  } else if (value !== current.working?.branch) {
+    await chooseBranch($, value)
+  }
+}
+
+async function keepWorking($: EngineInterface): Promise<void> {
+  const current = await read($, scope)
+
+  if (current?.working != null) {
+    const kept = await refresh(await ioOf($), { ...current, root: current.working.root, isPicking: false, note: null })
+    await update($, scope, () => kept)
+  }
+}
+
 // The person's own gesture: Enter at the prompt, the Remote Control bridge, or the
 // desktop app's host. A plugin's `$.command.run` and a scheduled prompt are not.
 function isPerson(origin: PromptOrigin): boolean {
@@ -82,6 +209,13 @@ async function runPlan($: EngineInterface, plan: WorktreeShipPlan | WorktreeClea
 
   try {
     const outcome = plan.kind === 'ship' ? await runShip(ctx, plan) : await runClean(ctx, plan)
+
+    if (outcome.isDone && plan.kind === 'clean') {
+      const current = await read($, scope)
+      if (current !== null) await update($, scope, () => afterClean(current, plan))
+      await refreshScope($)
+    }
+
     return outcome.isDone ? outcome.text : outcome.reason
   } finally {
     await update($, busy, () => null)
@@ -172,7 +306,7 @@ async function onPullRequest($: EngineInterface, data: Record<string, unknown>):
   }
 
   const ctx = await ctxOf($, PLUGIN)
-  const repo = await repoAt(ctx.run, await $.session.cwd())
+  const repo = await repoAt(ctx.run, (await aimOf($)).cwd)
 
   if (repo === null || !repo.isBareLayout) {
     return
@@ -292,30 +426,29 @@ export const register: Register = on => {
   })
 
   on('worktree.create', async ($, e, next) => ({
-    value: await create(await ctxOf($, next.origin.plugin), e, await $.session.cwd()),
+    value: await createAimed($, e, next.origin.plugin),
   }))
 
   on('worktree.ship', async ($, e, next) => {
-    const prepared = await prepareShip(await ctxOf($, next.origin.plugin), e, await $.session.cwd())
+    const prepared = await prepareShip(await ctxOf($, next.origin.plugin), e, (await aimOf($)).cwd)
     return { value: prepared.isDone ? { isDone: true, ...(await offer($, shipOffer(prepared.plan, prepared.lines))) } : prepared }
   })
 
   on('worktree.clean', async ($, e, next) => {
-    const cwd = await $.session.cwd()
-    const prepared = await prepareClean(await ctxOf($, next.origin.plugin), e, cwd, cwd)
+    const prepared = await prepareClean(await ctxOf($, next.origin.plugin), e, (await aimOf($)).cwd, await $.session.cwd())
     return { value: prepared.isDone ? { isDone: true, ...(await offer($, cleanOffer(prepared.plan, prepared.lines))) } : prepared }
   })
 
   on('worktree.sweep', async ($, e, next) => ({
-    value: await sweep($, await ctxOf($, next.origin.plugin), e.cwd ?? (await $.session.cwd())),
+    value: await sweep($, await ctxOf($, next.origin.plugin), e.cwd ?? (await aimOf($)).cwd),
   }))
 
   on('worktree.check', async ($, e, next) => ({
-    value: await checkNow($, await ctxOf($, next.origin.plugin), e.cwd ?? (await $.session.cwd())),
+    value: await checkNow($, await ctxOf($, next.origin.plugin), e.cwd ?? (await aimOf($)).cwd),
   }))
 
   on('worktree.list', async ($, e, next) => ({
-    value: await list(await ctxOf($, next.origin.plugin), e.cwd ?? (await $.session.cwd())),
+    value: await list(await ctxOf($, next.origin.plugin), e.cwd ?? (await aimOf($)).cwd),
   }))
 
   on('session.start', async ($, e, next) => {
@@ -328,7 +461,7 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'worktree_new',
       description:
-        'Create a branch and its worktree at <repo>/<branch>, cut from the branch the working directory is on (or base). The name follows the repo\'s branch rule; with none, <type>/<initials>/<slug>. Use instead of git worktree add or EnterWorktree.',
+        'Create a branch and its worktree at <repo>/<branch>, cut from the working branch the person picked (or base); with none picked, from the branch the working directory is on. It becomes the working branch. The name follows the repo\'s branch rule; with none, <type>/<initials>/<slug>. Use instead of git worktree add or EnterWorktree.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -378,7 +511,29 @@ export const register: Register = on => {
       description: 'List the branches this mod created in this repo, their worktrees and bases.',
     })
 
+    try {
+      await refreshScope($)
+    } catch (error) {
+      $.ui.log(String(error), { to: 'debug' })
+    }
+
     return next(e)
+  })
+
+  // Worktrees come and go in other sessions too: the lists are read again after each turn.
+  on('turn.complete', async ($, e, next) => {
+    const result = await next(e)
+    $.clock.after(0, () => void refreshScope($).catch(error => $.ui.log(String(error), { to: 'debug' })))
+    return result
+  })
+
+  on('prompt.compose', async ($, e, next) => {
+    const composed = await next(e)
+    const working = (await read($, scope))?.working ?? null
+
+    return working === null
+      ? composed
+      : { sections: [...composed.sections, { id: `${PLUGIN}:working`, text: promptText(working), scope: 'session' as const }] }
   })
 
   on('command.run', { command: 'wt' }, async ($, e) => {
@@ -386,12 +541,12 @@ export const register: Register = on => {
     const [sub = 'status', ...rest] = words
     const { positional, flags } = flagsOf(rest)
     const ctx = await ctxOf($, PLUGIN)
-    const cwd = await $.session.cwd()
+    const cwd = (await aimOf($)).cwd
 
     if (sub === 'new') {
       const [first, second] = positional
       const args = second === undefined ? { branch: first } : { type: first, slug: second }
-      const made = await create(ctx, { ...args, base: text(flags.get('base')) }, cwd)
+      const made = await createAimed($, { ...args, base: text(flags.get('base')) }, PLUGIN)
 
       return {
         text: made.isDone
@@ -406,7 +561,7 @@ export const register: Register = on => {
           ? await prepareShip(ctx, { branch: positional[0], base: text(flags.get('base')), title: text(flags.get('title')), isReady: flags.get('ready') === true }, cwd)
           : positional[0] === undefined
             ? ({ isDone: false, reason: 'Name the branch to housekeep: /wt clean <branch>' } as const)
-            : await prepareClean(ctx, { branch: positional[0] }, cwd, cwd)
+            : await prepareClean(ctx, { branch: positional[0] }, cwd, await $.session.cwd())
 
       if (!prepared.isDone) {
         return { text: prepared.reason }
@@ -468,7 +623,7 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'mcp__worktree-lifecycle__worktree_new' }, async ($, e) => {
     const input = { type: str(e.type), slug: str(e.slug), branch: str(e.branch), base: str(e.base) }
-    const made = await create(await ctxOf($, PLUGIN), input, await $.session.cwd())
+    const made = await createAimed($, input, PLUGIN)
 
     return made.isDone
       ? { result: `Created ${made.branch} at ${made.path}, cut from ${made.startPoint}. Branch rule: ${made.rule}. Work there by path; do not cd the session.` }
@@ -477,7 +632,7 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'mcp__worktree-lifecycle__worktree_ship' }, async ($, e) => {
     const input = { branch: str(e.branch), base: str(e.base), title: str(e.title), body: str(e.body), isReady: e.isReady === true }
-    const prepared = await prepareShip(await ctxOf($, PLUGIN), input, await $.session.cwd())
+    const prepared = await prepareShip(await ctxOf($, PLUGIN), input, (await aimOf($)).cwd)
 
     if (!prepared.isDone) {
       return { deny: prepared.reason }
@@ -490,13 +645,12 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'mcp__worktree-lifecycle__worktree_clean' }, async ($, e) => {
     const branch = str(e.branch)
-    const cwd = await $.session.cwd()
 
     if (branch === undefined) {
       return { deny: 'Name the branch to housekeep.' }
     }
 
-    const prepared = await prepareClean(await ctxOf($, PLUGIN), { branch }, cwd, cwd)
+    const prepared = await prepareClean(await ctxOf($, PLUGIN), { branch }, (await aimOf($)).cwd, await $.session.cwd())
 
     if (!prepared.isDone) {
       return { deny: prepared.reason }
@@ -508,7 +662,7 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'mcp__worktree-lifecycle__worktree_sweep' }, async $ => {
-    const swept = await sweep($, await ctxOf($, PLUGIN), await $.session.cwd())
+    const swept = await sweep($, await ctxOf($, PLUGIN), (await aimOf($)).cwd)
 
     return swept.isDone
       ? { result: `${swept.prepared.length} merged branch(es) offered for housekeeping in the band.${swept.skipped.map(line => ` Skipped ${line}.`).join('')}` }
@@ -516,13 +670,13 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'mcp__worktree-lifecycle__worktree_check' }, async $ => {
-    const checked = await checkNow($, await ctxOf($, PLUGIN), await $.session.cwd())
+    const checked = await checkNow($, await ctxOf($, PLUGIN), (await aimOf($)).cwd)
 
     return checked.isDone ? { result: JSON.stringify(checked.prs) } : { deny: checked.reason }
   })
 
   on('tool.call', { tool: 'mcp__worktree-lifecycle__worktree_status' }, async $ => {
-    const listed = await list(await ctxOf($, PLUGIN), await $.session.cwd())
+    const listed = await list(await ctxOf($, PLUGIN), (await aimOf($)).cwd)
 
     return listed.isDone ? { result: JSON.stringify(listed.entries) } : { deny: listed.reason }
   })
@@ -557,13 +711,65 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const queue = await read($, pending)
     const working = await read($, busy)
+    const where = await read($, scope)
     const item = queue[0]
 
-    if (e.props.hasSurvey || (item === undefined && working === null)) {
+    // The band is never raised on mobile, whose table has no Input or Select.
+    if (e.surface === 'mobile' || e.props.hasSurvey || (item === undefined && working === null && where === null)) {
       return next(e)
     }
 
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Input, Select, Text } = $.ui.resolve(e)
+
+    if (item === undefined && working === null && where !== null) {
+      if (where.isPicking) {
+        const rows = [<Text bold>Working environment</Text>]
+
+        if (where.org !== null) {
+          const repos = where.repos.map(root => ({ value: root, label: nameOf(root) }))
+          rows.push(<Select key="repo" label="Repo " options={[{ value: '', label: 'Choose a repo' }, ...repos]} value={where.root ?? ''} onSelect={value => void chooseRepo($, value)} />)
+        }
+
+        if (where.root !== null) {
+          const branches = where.branches.map(one => ({ value: one.branch, label: labelOf(one) }))
+          rows.push(<Select key="branch" label="Branch " options={[{ value: '', label: 'Choose a branch' }, ...branches]} value="" onSelect={value => void chooseBranch($, value)} />)
+          rows.push(<Input key="branch-name" label="Or any branch " placeholder="local or on origin" submitLabel="use" onSubmit={value => void chooseBranch($, value)} />)
+        }
+
+        if (where.note !== null) {
+          rows.push(<Text dimColor>{where.note}</Text>)
+        }
+
+        if (where.working !== null) {
+          rows.push(
+            <Box>
+              <Button key="keep" label={`Keep ${where.working.branch}`} onPress={() => void keepWorking($)} />
+            </Box>,
+          )
+        }
+
+        return <Box flexDirection="column">{rows}</Box>
+      }
+
+      if (where.working === null) {
+        return next(e)
+      }
+
+      const current = where.working
+      const trees = where.branches.filter(one => one.path !== null)
+      const listed = trees.some(one => one.branch === current.branch) ? trees : [current, ...trees]
+      const options = [
+        ...listed.map(one => ({ value: one.branch, label: labelOf(one) })),
+        { value: OTHER_BRANCH, label: 'Other branch...' },
+        ...(where.org === null ? [] : [{ value: OTHER_REPO, label: 'Other repo...' }]),
+      ]
+
+      return (
+        <Box>
+          <Select key="working" label={`${nameOf(current.root)} `} options={options} value={current.branch} onSelect={value => void chooseWorking($, value)} />
+        </Box>
+      )
+    }
 
     if (working !== null || item === undefined) {
       return (

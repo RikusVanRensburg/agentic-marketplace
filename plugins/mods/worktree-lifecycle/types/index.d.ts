@@ -96,6 +96,34 @@ export type WorktreePending = {
   plan: WorktreeShipPlan | WorktreeCleanPlan
 }
 
+// The branch the session works on: what the band shows and the model is told, and where the
+// lifecycle steps act when nobody names a repo or a base. The session's own folder never moves.
+export type WorktreeWorking = {
+  root: string
+  branch: string
+  // Its worktree; null when the branch has none yet.
+  path: string | null
+  // What it was cut from, from its lifecycle keys; null for a branch picked as the base itself.
+  base: string | null
+}
+
+// One branch the pickers offer: those with a worktree first, then local branches.
+export type WorktreeChoice = { branch: string; path: string | null; base: string | null }
+
+export type WorktreeScope = {
+  // The org folder the session opened, when it holds repos rather than being one.
+  org: string | null
+  // The repo roots under `org`.
+  repos: string[]
+  // The repo the picker or the working branch is in.
+  root: string | null
+  branches: WorktreeChoice[]
+  working: WorktreeWorking | null
+  isPicking: boolean
+  // Why the last pick did not take, shown in the picker.
+  note: string | null
+}
+
 export type Worktree = {
   create: (args: WorktreeCreateArgs) => Promise<WorktreeOutcome<WorktreeCreated>>
   // Ship, clean and sweep only prepare: the band asks the person, and their press runs it.
@@ -113,6 +141,6 @@ declare module 'claude-code' {
   }
 
   interface PluginState {
-    'worktree-lifecycle': { pending: WorktreePending[]; busy: string | null }
+    'worktree-lifecycle': { pending: WorktreePending[]; busy: string | null; scope: WorktreeScope | null }
   }
 }

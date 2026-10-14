@@ -17,7 +17,7 @@ It knows nothing about orchestration. Another mod can call it through `$.worktre
 
 | Command | Does |
 |---|---|
-| `/wt new <type> <slug> [--base <branch>]` | Creates `<type>/<initials>/<slug>` at `<repo>/<branch>`, cut from the branch you are on |
+| `/wt new <type> <slug> [--base <branch>]` | Creates `<type>/<initials>/<slug>` at `<repo>/<branch>`, cut from the working branch |
 | `/wt new <branch> [--base <branch>]` | The same with a whole branch name |
 | `/wt ship [<branch>] [--base <b>] [--title <t>] [--ready]` | Pushes and opens a draft PR (`--ready` for a normal one) |
 | `/wt clean <branch>` | Fast-forwards the base, removes the worktree and the empty folders above it, `branch -d`, deletes `origin/<branch>` |
@@ -28,6 +28,29 @@ It knows nothing about orchestration. Another mod can call it through `$.worktre
 Typing `/wt ship` or `/wt clean` yourself is the yes. The model's tools (`worktree_new`,
 `worktree_ship`, `worktree_clean`, `worktree_sweep`, `worktree_check`, `worktree_status`) and other
 mods only prepare a ship or a clean: it waits in a band above the prompt until you press the button.
+
+## Working branch
+
+The band above the prompt shows which repo and branch the session works on. The session's own
+folder never moves: other repos and worktrees stay open, and this only says where the work goes by
+default.
+
+- Opened on an org folder (one holding bare repos), the band asks for a repo, then a branch.
+- Opened on a repo root, it asks for a branch. Branches with a worktree come first, then local
+  branches; any branch on origin can be typed in.
+- Opened inside a worktree, that worktree is the working branch and nothing is asked.
+
+Once picked, the band folds to one dropdown: the repo's worktrees, `Other branch...` and, from an
+org folder, `Other repo...`. A worktree created in the working repo (`/wt new`, `worktree_new`,
+`$.worktree.create`) is cut from the working branch and becomes it. Housekeeping the working branch
+hands over to its base.
+
+The model reads the working branch in the system prompt, and is told in the transcript when you
+change it. Every `/wt` command and `worktree_*` tool acts on it when not given a folder; another
+mod that passes `cwd` is not affected.
+
+The pick is kept in the session's state, so it survives a mod reload. It is not written to disk:
+a new session starts from its folder again.
 
 ## Branch names
 
