@@ -17,45 +17,37 @@ Then install a plugin by name:
 /plugin install <plugin>@agentic-marketplace
 ```
 
-Pull new versions later with `/plugin marketplace update agentic-marketplace`.
-
-## Plugins
-
-### Skills
-
-| Plugin | Holds |
-|---|---|
-| `rr-core` | Session setup: new and finished worktrees, Timebase stacks (up, down, find, update, images), starting, refreshing and finishing a piece of work, shipping a branch |
-| `rr-stable` | Settled GitHub issue skills: triage for duplicates, quick issue filing |
-| `rr-testing` | Skills still being tried out: archivist and its agent, confidence gate, branch docs consolidation, handover with three reviewer agents, prompt-master |
-| `rr-workshop` | Run pipelines on GitHub Issues: wayfinding, spec, issues, test-first builds, Workflow fan-out and serial relay runs, plus grilling, findings defence, domain modelling, prototypes and the librarian |
-
-### Mods
-
-| Plugin | Does |
-|---|---|
-| `drive` | `/drive` keeps the drive's testing, docker and docs folders to their manifests, and cleans up only what you approve |
-| `worktree-lifecycle` | `/wt` creates the branch and worktree, ships a draft PR on your yes, hears about the merge, housekeeps when you say so, and guards the bare-clone layout |
-| `orchestrator` | Runs a multi-issue plan through subagents: dev and isolated QA per slice, one-at-a-time integration, final QA. Needs `worktree-lifecycle` |
-
-Each mod's own README covers its commands, tools and options.
+Pull new versions later with `/plugin marketplace update agentic-marketplace`. The catalog in
+`.claude-plugin/marketplace.json` lists every plugin on offer.
 
 ## Layout
 
 ```
 .claude-plugin/marketplace.json   the catalog, one entry per plugin
-plugins/<name>/                   skill plugins: skills/, agents/, commands/
-mods/<name>/                      mods: hooks/, tests/, and a README
+plugins/<name>/                   skill plugins
+  .claude-plugin/plugin.json        name, version, description
+  skills/<skill>/SKILL.md           one folder per skill
+  agents/<agent>.md                 subagents the skills dispatch
+  commands/                         slash commands, when a plugin has any
+mods/<name>/                      mods
+  .claude-plugin/plugin.json        name, version, description, options
+  hooks/hooks.json                  names the mod's one hooks module
+  hooks/                            the hooks module and its code
+  tests/                            unit tests, run by claude plugin test
+  README.md                         the mod's commands, tools and options
 docs/adr/                         decision records
 docs/specs/                       design specs
 ```
+
+A skill plugin groups skills that do one job. A mod changes Claude Code itself: commands, tools,
+panes, bands and hooks, written as code. A mod that needs another lists it under `dependencies` in
+its `plugin.json`; keep both in this marketplace.
 
 ## Adding a plugin
 
 1. Make a folder: `plugins/<name>/` for skills, `mods/<name>/` for a mod.
 2. Give it a `.claude-plugin/plugin.json` with its name, version and description.
 3. Add an entry to `.claude-plugin/marketplace.json` pointing at the folder.
-4. Add a row to the tables above.
 
 A new skill set or mod gets its own plugin, never a slot inside another one.
 
@@ -71,8 +63,3 @@ A new skill set or mod gets its own plugin, never a slot inside another one.
   ```
 
 - For a mod, run its tests too: `claude plugin test mods/<name>`.
-
-## History
-
-The plugins moved here from `flow-software/flow-agentic-resources` on 2026-10-14, with their git
-history.
