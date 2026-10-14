@@ -10,37 +10,85 @@
     {
       "name": "github-issues",
       "source": "./plugins/skills/github-issues",
-      "description": "File, triage and archive GitHub issues: quick issues, duplicate triage, and the librarian that shelves repo docs as closed issues"
+      "description": "Skills to file, triage and archive GitHub issues: quick-issue, issue-triage and librarian. The issues mod does their gh steps",
+      "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/skills/github-issues",
+      "keywords": [
+        "github",
+        "issues",
+        "triage",
+        "skills"
+      ]
     },
     {
       "name": "docs-ledger",
       "source": "./plugins/skills/docs-ledger",
-      "description": "Keep in-progress engineering docs in the repo: the archivist and its .ledger/"
+      "description": "The archivist skill, agent and hooks: a ledger in .ledger/ that keeps in-progress engineering docs current for later sessions",
+      "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/skills/docs-ledger",
+      "keywords": [
+        "docs",
+        "ledger",
+        "archivist",
+        "skills"
+      ]
     },
     {
       "name": "defending-findings",
       "source": "./plugins/skills/defending-findings",
-      "description": "Guilty until proven innocent for findings: defend a finding before acting on, citing or summarizing it"
+      "description": "The defending-findings skill: a finding is defended, attacked and calibrated before anything acts on it",
+      "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/skills/defending-findings",
+      "keywords": [
+        "review",
+        "findings",
+        "skills"
+      ]
     },
     {
       "name": "drive",
       "source": "./plugins/mods/drive",
-      "description": "Keeps the drive's testing, docker and docs folders to their manifests"
+      "description": "/drive and four tools (testing_run, docker_stack, docs_index, drive_check) that keep the drive's testing, docker and docs folders to their manifests; cleanup runs only on /drive clean apply",
+      "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/mods/drive",
+      "keywords": [
+        "drive",
+        "testing",
+        "docker",
+        "docs",
+        "mod"
+      ]
     },
     {
       "name": "worktree-lifecycle",
       "source": "./plugins/mods/worktree-lifecycle",
-      "description": "Branch and worktree lifecycle for bare-clone repos: start, ship on your yes, merge notice, housekeeping and layout guards"
+      "description": "/wt and worktree_* tools for bare-clone repos: start work, ship a draft PR on your yes, hear about the merge, housekeep when you say so, and guard the layout",
+      "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/mods/worktree-lifecycle",
+      "keywords": [
+        "git",
+        "worktree",
+        "pull-request",
+        "mod"
+      ]
     },
     {
       "name": "orchestrator",
       "source": "./plugins/mods/orchestrator",
-      "description": "Runs a multi-issue plan through subagents on escalating model ladders, with isolated QA, verified integration and live blockers"
+      "description": "/orchestrate runs a multi-issue plan through subagents: dev and isolated QA per slice on escalating model ladders, verified one-at-a-time integration, final QA. Needs worktree-lifecycle",
+      "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/mods/orchestrator",
+      "keywords": [
+        "orchestration",
+        "subagents",
+        "qa",
+        "mod"
+      ]
     },
     {
       "name": "issues",
       "source": "./plugins/mods/issues",
-      "description": "The mechanical side of GitHub issues: create, fill, link and label with every field verified, duplicates closed only on your command"
+      "description": "Six tools (issue_labels, issue_create, issue_fill, issue_link, label_ensure, issue_consolidate) that do the gh steps for GitHub issues and check each landed; a duplicate closes only on /issues consolidate",
+      "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/mods/issues",
+      "keywords": [
+        "github",
+        "issues",
+        "mod"
+      ]
     }
   ]
 }

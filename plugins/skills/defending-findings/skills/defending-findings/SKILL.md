@@ -1,6 +1,6 @@
 ---
 name: defending-findings
-description: 'Guilty until proven innocent for findings. Use when producing a finding, and before acting on, citing, or summarizing one. Triggers include "I found", "the bug is", "the root cause", "therefore", "so it must be". Other rr-workshop skills reach for it as their standing rule on findings.'
+description: 'Guilty until proven innocent for findings. Use when producing a finding, and before acting on, citing, or summarizing one. Triggers include "I found", "the bug is", "the root cause", "therefore", "so it must be". Other skills, such as issue-triage, reach for it as their standing rule on findings.'
 ---
 
 # Defending Findings

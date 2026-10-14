@@ -1,10 +1,20 @@
 {
   "name": "drive",
-  "version": "0.2.0",
-  "description": "Keeps the drive's testing, docker and docs folders to their manifests: /drive, its tools, and a cleanup you approve",
-  "author": { "name": "RR" },
+  "version": "0.2.1",
+  "description": "/drive and four tools (testing_run, docker_stack, docs_index, drive_check) that keep the drive's testing, docker and docs folders to their manifests; cleanup runs only on /drive clean apply",
+  "author": {
+    "name": "RR"
+  },
+  "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/mods/drive",
   "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
   "license": "MIT",
+  "keywords": [
+    "drive",
+    "testing",
+    "docker",
+    "docs",
+    "mod"
+  ],
   "userConfig": {
     "driveRoot": {
       "type": "string",
