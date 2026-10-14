@@ -1,30 +1,53 @@
-# agentic-marketplace
+<plugin-versioning>
+## Plugin Version Bumping
 
-RR's personal plugin marketplace. Skill plugins live in `plugins/<name>/`, mods in `mods/<name>/`,
-and each one is its own entry in `.claude-plugin/marketplace.json`. A new skill set or mod gets its
-own folder and its own entry, never a slot inside another plugin.
+Any time you modify a plugin's contents (skills, agents, scripts, config, or any file under a
+`plugins/{name}/` directory), the version in that plugin's `.claude-plugin/plugin.json` MUST be
+bumped before that change is **published**: before the branch carrying it is merged or pushed.
 
-## Versions
+**One bump per release, not one per commit.** A work-in-progress commit on a feature branch is
+never something a consumer can pull, so bumping on every commit turns the version into a commit
+counter and protects nobody. Group the work into whatever commits read best and move the version
+once, in the last of them.
 
-Bump `<folder>/.claude-plugin/plugin.json` once per release, before the branch carrying the change
-is pushed: patch for additions and fixes, minor for breaking changes. Installs only see a change
-when the version moves.
+Because that removes the per-commit forcing function, treat the bump as part of finishing a branch:
+no branch touching `plugins/` is done until its plugin's version has moved.
 
-## Checks
+**Version file location:** `plugins/{plugin-name}/.claude-plugin/plugin.json`
 
-Before every commit that touches a plugin or the catalog:
+**Version field:** `"version": "X.Y.Z"`. Increment the patch number (Z) for additions and fixes,
+the minor number (Y) for breaking changes to existing skills.
+
+**Current plugins and their version files:**
+- `plugins/rr-core/.claude-plugin/plugin.json`
+- `plugins/rr-stable/.claude-plugin/plugin.json`
+- `plugins/rr-testing/.claude-plugin/plugin.json`
+- `plugins/rr-workshop/.claude-plugin/plugin.json`
+- `mods/drive/.claude-plugin/plugin.json` (drive)
+- `mods/worktree-lifecycle/.claude-plugin/plugin.json` (worktree-lifecycle)
+- `mods/orchestrator/.claude-plugin/plugin.json` (orchestrator)
+
+Mods live in `mods/{mod-name}/` and follow the same rule: bump `mods/{mod-name}/.claude-plugin/plugin.json`
+and add the mod to this list when it is created.
+
+This is how users receive updates: they run `/plugin marketplace update`, which pulls the latest
+version. If you forget to bump, nobody gets the change.
+</plugin-versioning>
+
+<plugin-validation>
+## Plugin Validation
+
+Any time you modify a plugin or marketplace configuration, run the built-in validation before
+committing:
 
 ```bash
-claude plugin validate <folder>
-claude plugin validate .
+claude plugin validate plugins/{name}
 ```
 
-For a mod, also run its tests:
+The path argument is required: a bare `claude plugin validate` errors on current CLI versions
+(confirmed on 2.1.220).
 
-```bash
-claude plugin test mods/<name>
-```
-
-## Branches
-
-`<type>/RVR/<kebab-description>`, lowercase type: feat, fix, docs, chore, refactor, test.
+This validates `plugin.json` schema, skill/agent/command frontmatter, and hook configuration.
+Unlike the version bump, run this on **every** commit that touches a plugin: it is cheap, and it
+catches a broken manifest at the commit that broke it rather than thirty commits later.
+</plugin-validation>
