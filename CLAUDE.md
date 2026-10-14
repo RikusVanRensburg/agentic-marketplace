@@ -18,17 +18,7 @@ no branch touching `plugins/` is done until its plugin's version has moved.
 **Version field:** `"version": "X.Y.Z"`. Increment the patch number (Z) for additions and fixes,
 the minor number (Y) for breaking changes to existing skills.
 
-**Current plugins and their version files:**
-- `plugins/rr-core/.claude-plugin/plugin.json`
-- `plugins/rr-stable/.claude-plugin/plugin.json`
-- `plugins/rr-testing/.claude-plugin/plugin.json`
-- `plugins/rr-workshop/.claude-plugin/plugin.json`
-- `mods/drive/.claude-plugin/plugin.json` (drive)
-- `mods/worktree-lifecycle/.claude-plugin/plugin.json` (worktree-lifecycle)
-- `mods/orchestrator/.claude-plugin/plugin.json` (orchestrator)
-
-Mods live in `mods/{mod-name}/` and follow the same rule: bump `mods/{mod-name}/.claude-plugin/plugin.json`
-and add the mod to this list when it is created.
+Mods live in `mods/{mod-name}/` and follow the same rule: bump `mods/{mod-name}/.claude-plugin/plugin.json`.
 
 This is how users receive updates: they run `/plugin marketplace update`, which pulls the latest
 version. If you forget to bump, nobody gets the change.
