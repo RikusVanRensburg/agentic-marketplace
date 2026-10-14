@@ -32,44 +32,34 @@ guessing**; if something is still missing, ask for it in one round, then write.
 
 ## The native fields
 
-Three fields ride alongside the body in both modes.
+Three fields ride alongside the body in both modes. The `issues` mod sets them and checks they
+landed, so this skill only picks the values. Call its `issue_labels` tool first: it lists the
+repo's labels by family, the org's native issue types and the milestones.
 
-**Labels — drawn from the repo's own taxonomy:**
+**Labels, from the repo's own taxonomy.** Pick the `type:`-family value whose *meaning* fits (new
+capability, bug fix, or upkeep; the literal strings vary by repo), plus a `scope:`-family value if
+one clearly applies. The taxonomy is pre-seeded team vocabulary, so if a family is absent, file
+without it and tell the user.
 
-```bash
-gh label list --limit 200 --json name
-```
-
-Pick from what that command returned: the `type:`-family value whose *meaning* fits (new
-capability, bug fix, or upkeep — the literal strings vary by repo), plus a `scope:`-family
-value if one clearly applies. The taxonomy is pre-seeded team vocabulary, so if a family is
-absent from the list, file without it and tell the user.
-
-**Native issue type — a separate, coarser field from the `type:` label; set both.** Map by
+**Native issue type, a separate, coarser field from the `type:` label; set both.** Map by
 meaning: new capability → `Feature`, bug fix → `Bug`, everything else (restructuring,
-housekeeping, docs) → `Task`. Check `gh api orgs/{owner}/issue-types` if unsure the org has
-issue types configured; if it 404s or returns nothing, omit `--type`.
+housekeeping, docs) → `Task`. When `issue_labels` says the org has none, leave it off.
 
-**Assignee — `@me`.**
+**Assignee: `@me`.**
 
-## Mode A — file a new issue
+## Mode A: file a new issue
 
-```bash
-gh issue create --title "<title>" --body-file <local-draft>.md \
-  --label "<type-label>" --label "<scope-label>" \
-  --assignee @me --type "<native-type>"
-```
+Call `issue_create` with the title, the body, the labels, the native type and `assignee: "@me"`.
+Report success by echoing the issue URL it returns. On an error, stop and report it verbatim: it
+names what did not land.
 
-Drop any flag the repo or org doesn't support. Report success by echoing the issue URL the
-command printed; on a non-zero exit, stop and report the error verbatim.
-
-## Mode B — flesh out an existing issue
+## Mode B: flesh out an existing issue
 
 Everything already on the issue **survives**: the body is rewritten into the shape with the
 existing text folded into the section it belongs in, and each native field is filled only where
 it is currently blank.
 
-1. Fetch the target, asking for the number if none was given:
+1. Read the target, asking for the number if none was given:
 
    ```bash
    gh issue view <n> --json number,title,body,labels,assignees,type,state
@@ -78,20 +68,11 @@ it is currently blank.
 2. Read the sparse title and body, plus any file or component its text names, until the shape
    can be written without guessing.
 
-3. Rewrite the body in place:
+3. Call `issue_fill` with the number, the rewritten body, the labels, the native type and
+   `assignee: "@me"`. It fills only what is blank and leaves what is there.
 
-   ```bash
-   gh issue edit <n> --body-file <local-draft>.md
-   ```
-
-4. Fill blanks, judged against the JSON from step 1:
-
-   - `assignees` empty → `gh issue edit <n> --add-assignee @me`
-   - no label from a family → add that family's label
-   - `.type` is `null` → `gh issue edit <n> --type "<native-type>"`
-
-On a non-zero exit from any edit, stop and report the error verbatim. Otherwise report, field
-by field, what you filled and what was already there.
+On an error, stop and report it verbatim. Otherwise relay its report, field by field: what it
+filled and what was already there.
 
 ## Done when
 
@@ -99,7 +80,7 @@ by field, what you filled and what was already there.
       concrete checkable outcome.
 - [ ] Labels, native type and assignee are each either set on the issue, or their absence
       explained to the user (family missing from the taxonomy, org has no issue types).
-- [ ] **Mode A** — the URL `gh issue create` printed was echoed to the user.
+- [ ] **Mode A** — the URL `issue_create` returned was echoed to the user.
 - [ ] **Mode B** — the prior body text survives inside the new shape, and each of `assignees`,
       the `type:`/`scope:` labels and `.type` was reported as either filled now or already
       present.

@@ -36,6 +36,11 @@
       "name": "orchestrator",
       "source": "./plugins/mods/orchestrator",
       "description": "Runs a multi-issue plan through subagents on escalating model ladders, with isolated QA, verified integration and live blockers"
+    },
+    {
+      "name": "issues",
+      "source": "./plugins/mods/issues",
+      "description": "The mechanical side of GitHub issues: create, fill, link and label with every field verified, duplicates closed only on your command"
     }
   ]
 }

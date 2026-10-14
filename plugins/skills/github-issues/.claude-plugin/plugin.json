@@ -14,5 +14,8 @@
   "skills": "./skills/",
   "agents": [
     "./agents/librarian.md"
+  ],
+  "dependencies": [
+    "issues"
   ]
 }

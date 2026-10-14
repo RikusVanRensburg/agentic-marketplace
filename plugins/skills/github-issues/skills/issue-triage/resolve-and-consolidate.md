@@ -2,18 +2,20 @@
 
 Reached from [issue-triage](SKILL.md) step 4 with a survivor and a loser named.
 
-1. **Preserve content** — read the loser's body and comments; append whatever the survivor
-   doesn't already cover as a comment on it:
-   `gh issue comment <survivor> --body "..."`
-2. **Cross-link** — comment on each issue naming the other by number and title.
-3. **Label the loser** — run `gh label list` and apply the label only if a `duplicate` label is
-   already there: `gh issue edit <loser> --add-label duplicate`. Where the repo has no such
-   label, skip this action and carry on.
-4. **Close the loser** — `gh issue close <loser> --reason "not planned" --comment "Duplicate of
-   #<survivor> (<survivor title>) — consolidated per the choice above."`
+The `issues` mod does the four actions and checks each one: it carries content over, cross-links
+both issues, adds the `duplicate` label when the repo has one, and closes the loser as not
+planned. This skill supplies the one part that takes judgment.
 
-If an action fails, stop at that action and surface the error alongside the actions that did
-complete: a partial consolidation is reported as partial.
+1. **Find what the loser adds.** Read the loser's body and comments
+   (`gh issue view <loser> --comments`) and write down, as markdown, whatever the survivor does
+   not already cover. Nothing new is a valid answer.
+2. **Plan it.** Call `issue_consolidate` with the survivor, the loser and that carry-over text.
+   It changes nothing on GitHub.
+3. **Hand it to the user.** Tell them the plan and that `/issues consolidate` carries it out
+   (the plan holds for an hour). End the turn: the mod refuses the command unless the user types
+   it.
 
-**Done when** all four actions have succeeded, or a failure is surfaced naming which of the
-four completed.
+If the user reports a partial consolidation, the mod's message names which actions completed;
+relay it as partial.
+
+**Done when** the plan is made and the user has been told to run `/issues consolidate`.

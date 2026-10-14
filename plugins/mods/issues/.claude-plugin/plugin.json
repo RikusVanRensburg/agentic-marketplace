@@ -1,0 +1,22 @@
+{
+  "name": "issues",
+  "version": "0.1.0",
+  "description": "The mechanical side of GitHub issues in code: create, fill, link and label with every field verified, and duplicates closed only on your command",
+  "author": { "name": "RR" },
+  "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
+  "license": "MIT",
+  "userConfig": {
+    "reservedFamilies": {
+      "type": "string",
+      "title": "Reserved label families",
+      "description": "Label families that are the repo's own taxonomy and never created by label_ensure, comma separated",
+      "default": "type:, scope:, state:"
+    },
+    "labelColor": {
+      "type": "string",
+      "title": "Label color",
+      "description": "Six hex digits for labels label_ensure creates when no color is given",
+      "default": "1D76DB"
+    }
+  }
+}

@@ -88,8 +88,8 @@ the tracker stays exactly as step 1 found it.
 
 **Reject** → report that the duplicate claim was rejected, and stop; nothing changes.
 
-**A survivor named** → the other issue is the loser. Consolidate the pair:
+**A survivor named** → the other issue is the loser. Plan the consolidation:
 [resolve-and-consolidate.md](resolve-and-consolidate.md).
 
-**Done when** either the rejection is reported, or a survivor and loser are named and
-consolidation has finished.
+**Done when** either the rejection is reported, or a survivor and loser are named and the
+consolidation is planned, waiting on the user's `/issues consolidate`.
