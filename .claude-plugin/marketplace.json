@@ -8,19 +8,19 @@
   },
   "plugins": [
     {
-      "name": "rr-stable",
-      "source": "./plugins/skills/rr-stable",
-      "description": "RR's personal workflows and skills"
+      "name": "github-issues",
+      "source": "./plugins/skills/github-issues",
+      "description": "File, triage and archive GitHub issues: quick issues, duplicate triage, and the librarian that shelves repo docs as closed issues"
     },
     {
-      "name": "rr-testing",
-      "source": "./plugins/skills/rr-testing",
-      "description": "RR's skills under testing"
+      "name": "docs-ledger",
+      "source": "./plugins/skills/docs-ledger",
+      "description": "Keep in-progress engineering docs in the repo: the archivist's .ledger/ and branch planning docs consolidated at wrap-up"
     },
     {
-      "name": "rr-workshop",
-      "source": "./plugins/skills/rr-workshop",
-      "description": "Two run pipelines on GitHub Issues: wayfinding, spec, issues, then implementation by Workflow fan-out or serial relay"
+      "name": "defending-findings",
+      "source": "./plugins/skills/defending-findings",
+      "description": "Guilty until proven innocent for findings: defend a finding before acting on, citing or summarizing it"
     },
     {
       "name": "drive",

@@ -1,0 +1,51 @@
+{
+  "name": "docs-ledger",
+  "description": "Keep in-progress engineering docs in the repo: the archivist's .ledger/ and branch planning docs consolidated at wrap-up",
+  "version": "0.1.0",
+  "author": {
+    "name": "RR"
+  },
+  "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
+  "license": "MIT",
+  "keywords": [
+    "docs",
+    "ledger"
+  ],
+  "skills": "./skills/",
+  "agents": [
+    "./agents/archivist.md"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/archivist-session-start.sh\" \"${CLAUDE_PLUGIN_ROOT}\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/archivist-post-write.sh\" \"${CLAUDE_PLUGIN_ROOT}\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/skills/archivist/scripts/archivist-stop.sh\" \"${CLAUDE_PLUGIN_ROOT}\""
+          }
+        ]
+      }
+    ]
+  }
+}

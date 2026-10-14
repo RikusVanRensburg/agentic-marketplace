@@ -37,7 +37,6 @@ plugins/
     tests/                            unit tests, run by claude plugin test
     README.md                         the mod's commands, tools and options
 docs/adr/                           decision records
-docs/specs/                         design specs
 ```
 
 Every plugin sits under `plugins/`, in the folder for its type: `skills/` or `mods/`.
