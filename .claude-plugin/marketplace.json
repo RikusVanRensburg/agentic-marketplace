@@ -15,7 +15,7 @@
     {
       "name": "docs-ledger",
       "source": "./plugins/skills/docs-ledger",
-      "description": "Keep in-progress engineering docs in the repo: the archivist's .ledger/ and branch planning docs consolidated at wrap-up"
+      "description": "Keep in-progress engineering docs in the repo: the archivist and its .ledger/"
     },
     {
       "name": "defending-findings",

@@ -1,6 +1,6 @@
 {
   "name": "docs-ledger",
-  "description": "Keep in-progress engineering docs in the repo: the archivist's .ledger/ and branch planning docs consolidated at wrap-up",
+  "description": "Keep in-progress engineering docs in the repo: the archivist and its .ledger/",
   "version": "0.1.0",
   "author": {
     "name": "RR"
