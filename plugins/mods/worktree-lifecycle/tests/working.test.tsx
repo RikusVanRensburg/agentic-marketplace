@@ -108,20 +108,48 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await start($)
     const ui = await $.ui.mount({ ...band, surface })
 
-    expect(options(await ui.find({ type: 'Select', key: 'repo' }))).toEqual(['Choose a repo', 'alpha', 'beta'])
+    expect(options(await ui.find({ type: 'Select', key: 'repo' }))).toEqual(['Choose repo', 'alpha', 'beta'])
     expect(await ui.find({ type: 'Select', key: 'branch' })).toBeUndefined()
 
     await ui.select({ key: 'repo', value: 'D:/org/alpha' })
-    expect(options(await ui.find({ type: 'Select', key: 'branch' }))).toEqual(['Choose a branch', 'main', 'release, no worktree'])
+    expect(options(await ui.find({ type: 'Select', key: 'branch' }))).toEqual(['Choose branch', 'main', 'release, no worktree'])
 
     await ui.select({ key: 'branch', value: 'main' })
     const working = await ui.find({ type: 'Select', key: 'working' })
 
     expect(working?.props.value).toBe('main')
-    expect(working?.props.label).toBe('alpha ')
     expect(options(working)).toEqual(['main', 'Other branch...', 'Other repo...'])
+    expect(await ui.find({ type: 'Text', text: 'org' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'alpha' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '1 worktree' })).toBeDefined()
     expect(await ui.find({ type: 'Select', key: 'branch' })).toBeUndefined()
     expect(w.appended).toEqual(['[worktree-lifecycle] The person set the working environment: alpha on main, worktree D:/org/alpha/main.'])
+  })
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`${surface}: the band is one row, with the mark and chevrons drawn for the surface`, async ($, on) => {
+    const w = world('D:/org')
+    stub(on, w)
+    await start($)
+    const ui = await $.ui.mount({ ...band, surface })
+
+    const rows = async () => {
+      type Node = { props: Record<string, unknown>; children?: unknown[] }
+      const drawn = (await ui.drawn()) as unknown as Node
+      const isColumn = (child: unknown) => typeof child === 'object' && child !== null && 'props' in child && (child as Node).props.flexDirection === 'column'
+      return [drawn.props.flexDirection, (drawn.children ?? []).some(isColumn)]
+    }
+
+    expect(await rows()).toEqual(['row', false])
+    await ui.select({ key: 'repo', value: 'D:/org/alpha' })
+    expect(await rows()).toEqual(['row', false])
+    await ui.select({ key: 'branch', value: 'main' })
+    expect(await rows()).toEqual(['row', false])
+
+    const svgs = await ui.findAll({ type: 'Svg' })
+    expect(svgs.length).toBe(surface === 'desktop' ? 3 : 0)
+    expect(await ui.find({ type: 'Text', text: '›' })).toEqual(surface === 'desktop' ? undefined : expect.anything())
   })
 }
 
