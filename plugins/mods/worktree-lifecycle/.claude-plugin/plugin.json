@@ -1,6 +1,6 @@
 {
   "name": "worktree-lifecycle",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "/wt and worktree_* tools for bare-clone repos: start work, ship a draft PR on your yes, hear about the merge, housekeep when you say so, and guard the layout",
   "author": {
     "name": "RR"

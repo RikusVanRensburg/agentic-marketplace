@@ -13,6 +13,7 @@ import type {
   WorktreeShipPlan,
 } from '../types'
 import { hasRef, lifecycleKeys, repoAt, setKey, type Run } from './git'
+import { scopeRow } from './band'
 import { gitCalls, layoutDeny, segmentsOf, stashVerdict, worktreeAddOf } from './guards'
 import { PLUGIN, check, create, list, prOf, prepareClean, prepareShip, runClean, runShip, type Ctx } from './lifecycle'
 import { join, looksLikeWindows, samePath } from './paths'
@@ -21,8 +22,6 @@ import {
   OTHER_REPO,
   adopt,
   afterClean,
-  labelOf,
-  nameOf,
   pickBranch,
   pickRepo,
   promptText,
@@ -719,56 +718,19 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const { Box, Button, Input, Select, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
 
     if (item === undefined && working === null && where !== null) {
-      if (where.isPicking) {
-        const rows = [<Text bold>Working environment</Text>]
-
-        if (where.org !== null) {
-          const repos = where.repos.map(root => ({ value: root, label: nameOf(root) }))
-          rows.push(<Select key="repo" label="Repo " options={[{ value: '', label: 'Choose a repo' }, ...repos]} value={where.root ?? ''} onSelect={value => void chooseRepo($, value)} />)
-        }
-
-        if (where.root !== null) {
-          const branches = where.branches.map(one => ({ value: one.branch, label: labelOf(one) }))
-          rows.push(<Select key="branch" label="Branch " options={[{ value: '', label: 'Choose a branch' }, ...branches]} value="" onSelect={value => void chooseBranch($, value)} />)
-          rows.push(<Input key="branch-name" label="Or any branch " placeholder="local or on origin" submitLabel="use" onSubmit={value => void chooseBranch($, value)} />)
-        }
-
-        if (where.note !== null) {
-          rows.push(<Text dimColor>{where.note}</Text>)
-        }
-
-        if (where.working !== null) {
-          rows.push(
-            <Box>
-              <Button key="keep" label={`Keep ${where.working.branch}`} onPress={() => void keepWorking($)} />
-            </Box>,
-          )
-        }
-
-        return <Box flexDirection="column">{rows}</Box>
-      }
-
-      if (where.working === null) {
+      if (!where.isPicking && where.working === null) {
         return next(e)
       }
 
-      const current = where.working
-      const trees = where.branches.filter(one => one.path !== null)
-      const listed = trees.some(one => one.branch === current.branch) ? trees : [current, ...trees]
-      const options = [
-        ...listed.map(one => ({ value: one.branch, label: labelOf(one) })),
-        { value: OTHER_BRANCH, label: 'Other branch...' },
-        ...(where.org === null ? [] : [{ value: OTHER_REPO, label: 'Other repo...' }]),
-      ]
-
-      return (
-        <Box>
-          <Select key="working" label={`${nameOf(current.root)} `} options={options} value={current.branch} onSelect={value => void chooseWorking($, value)} />
-        </Box>
-      )
+      return scopeRow($.ui.resolve(e), e.surface, where, {
+        repo: value => void chooseRepo($, value),
+        branch: value => void chooseBranch($, value),
+        working: value => void chooseWorking($, value),
+        keep: () => void keepWorking($),
+      })
     }
 
     if (working !== null || item === undefined) {

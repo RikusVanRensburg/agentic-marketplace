@@ -31,7 +31,8 @@ mods only prepare a ship or a clean: it waits in a band above the prompt until y
 
 ## Working branch
 
-The band above the prompt shows which repo and branch the session works on. The session's own
+The band above the prompt shows which repo and branch the session works on, on one row that reads
+`org › repo › branch`, with a picker in place of each part not chosen yet. The session's own
 folder never moves: other repos and worktrees stay open, and this only says where the work goes by
 default.
 
@@ -40,8 +41,8 @@ default.
   branches; any branch on origin can be typed in.
 - Opened inside a worktree, that worktree is the working branch and nothing is asked.
 
-Once picked, the band folds to one dropdown: the repo's worktrees, `Other branch...` and, from an
-org folder, `Other repo...`. A worktree created in the working repo (`/wt new`, `worktree_new`,
+Once picked, the branch is a dropdown of the repo's worktrees, `Other branch...` and, from an org
+folder, `Other repo...`, followed by the base it was cut from and the repo's worktree count. A worktree created in the working repo (`/wt new`, `worktree_new`,
 `$.worktree.create`) is cut from the working branch and becomes it. Housekeeping the working branch
 hands over to its base.
 
