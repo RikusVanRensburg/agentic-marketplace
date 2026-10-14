@@ -1,0 +1,28 @@
+{
+  "name": "drive",
+  "version": "0.2.0",
+  "description": "Keeps the drive's testing, docker and docs folders to their manifests: /drive, its tools, and a cleanup you approve",
+  "author": { "name": "RR" },
+  "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
+  "license": "MIT",
+  "userConfig": {
+    "driveRoot": {
+      "type": "string",
+      "title": "Drive root",
+      "description": "The drive holding testing, docker and docs, for the drive mod",
+      "default": "D:/"
+    },
+    "staleDays": {
+      "type": "number",
+      "title": "Stale after (days)",
+      "description": "A running test run untouched, or a docker stack up, this long is put in the cleanup plan",
+      "default": 7
+    },
+    "nudge": {
+      "type": "boolean",
+      "title": "Nudge at session start",
+      "description": "Show a toast when the drive has something to clean",
+      "default": true
+    }
+  }
+}

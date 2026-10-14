@@ -1,0 +1,46 @@
+{
+  "name": "agentic-marketplace",
+  "owner": {
+    "name": "Rikus van Rensburg"
+  },
+  "metadata": {
+    "description": "RR's personal Claude Code skills and mods"
+  },
+  "plugins": [
+    {
+      "name": "github-issues",
+      "source": "./plugins/skills/github-issues",
+      "description": "File, triage and archive GitHub issues: quick issues, duplicate triage, and the librarian that shelves repo docs as closed issues"
+    },
+    {
+      "name": "docs-ledger",
+      "source": "./plugins/skills/docs-ledger",
+      "description": "Keep in-progress engineering docs in the repo: the archivist and its .ledger/"
+    },
+    {
+      "name": "defending-findings",
+      "source": "./plugins/skills/defending-findings",
+      "description": "Guilty until proven innocent for findings: defend a finding before acting on, citing or summarizing it"
+    },
+    {
+      "name": "drive",
+      "source": "./plugins/mods/drive",
+      "description": "Keeps the drive's testing, docker and docs folders to their manifests"
+    },
+    {
+      "name": "worktree-lifecycle",
+      "source": "./plugins/mods/worktree-lifecycle",
+      "description": "Branch and worktree lifecycle for bare-clone repos: start, ship on your yes, merge notice, housekeeping and layout guards"
+    },
+    {
+      "name": "orchestrator",
+      "source": "./plugins/mods/orchestrator",
+      "description": "Runs a multi-issue plan through subagents on escalating model ladders, with isolated QA, verified integration and live blockers"
+    },
+    {
+      "name": "issues",
+      "source": "./plugins/mods/issues",
+      "description": "The mechanical side of GitHub issues: create, fill, link and label with every field verified, duplicates closed only on your command"
+    }
+  ]
+}

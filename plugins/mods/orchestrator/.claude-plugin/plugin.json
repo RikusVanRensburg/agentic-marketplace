@@ -1,0 +1,55 @@
+{
+  "name": "orchestrator",
+  "version": "0.1.1",
+  "description": "Runs a multi-issue plan through subagents: per-slice dev and isolated QA on escalating model ladders, verified one-at-a-time integration, final QA with remediation, live blockers",
+  "author": { "name": "RR" },
+  "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "dependencies": ["worktree-lifecycle"],
+  "userConfig": {
+    "sonnetFirst": {
+      "type": "string",
+      "title": "Sonnet-first ladder",
+      "description": "Dev rungs for sonnet-first slices, cheapest first, as model/effort",
+      "default": "sonnet/high, sonnet/xhigh, opus/high"
+    },
+    "haikuFirst": {
+      "type": "string",
+      "title": "Haiku-first ladder",
+      "description": "Dev rungs for haiku-first slices, cheapest first, as model/effort",
+      "default": "haiku/high, sonnet/high, opus/high"
+    },
+    "qa": {
+      "type": "string",
+      "title": "QA rung",
+      "description": "Model/effort of the per-slice QA",
+      "default": "opus/high"
+    },
+    "finalQa": {
+      "type": "string",
+      "title": "Final QA rung",
+      "description": "Model/effort of the final QA of the integrated branch",
+      "default": "opus/xhigh"
+    },
+    "takeover": {
+      "type": "string",
+      "title": "On a model change",
+      "description": "When a climb changes model, continue on the branch with QA's defects, or start fresh from the integration branch",
+      "options": ["continue", "fresh"],
+      "default": "continue"
+    },
+    "concurrency": {
+      "type": "number",
+      "title": "Slices at once",
+      "description": "How many slices may have a dev or QA agent running at the same time",
+      "default": 3
+    },
+    "qaCleanKeep": {
+      "type": "string",
+      "title": "Kept when QA cleans",
+      "description": "Ignored folders kept when the worktree is cleaned before QA, comma separated",
+      "default": "node_modules, packages"
+    }
+  }
+}

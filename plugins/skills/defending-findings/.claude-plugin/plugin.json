@@ -1,0 +1,15 @@
+{
+  "name": "defending-findings",
+  "description": "Guilty until proven innocent for findings: defend a finding before acting on, citing or summarizing it",
+  "version": "0.1.0",
+  "author": {
+    "name": "RR"
+  },
+  "repository": "https://github.com/RikusVanRensburg/agentic-marketplace",
+  "license": "MIT",
+  "keywords": [
+    "review",
+    "findings"
+  ],
+  "skills": "./skills/"
+}
