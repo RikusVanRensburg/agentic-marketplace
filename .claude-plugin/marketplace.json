@@ -9,37 +9,37 @@
   "plugins": [
     {
       "name": "rr-core",
-      "source": "./plugins/rr-core",
+      "source": "./plugins/skills/rr-core",
       "description": "RR's core session-setup skills, always installed, invoked explicitly"
     },
     {
       "name": "rr-stable",
-      "source": "./plugins/rr-stable",
+      "source": "./plugins/skills/rr-stable",
       "description": "RR's personal workflows and skills"
     },
     {
       "name": "rr-testing",
-      "source": "./plugins/rr-testing",
+      "source": "./plugins/skills/rr-testing",
       "description": "RR's skills under testing"
     },
     {
       "name": "rr-workshop",
-      "source": "./plugins/rr-workshop",
+      "source": "./plugins/skills/rr-workshop",
       "description": "Two run pipelines on GitHub Issues: wayfinding, spec, issues, then implementation by Workflow fan-out or serial relay"
     },
     {
       "name": "drive",
-      "source": "./mods/drive",
+      "source": "./plugins/mods/drive",
       "description": "Keeps the drive's testing, docker and docs folders to their manifests"
     },
     {
       "name": "worktree-lifecycle",
-      "source": "./mods/worktree-lifecycle",
+      "source": "./plugins/mods/worktree-lifecycle",
       "description": "Branch and worktree lifecycle for bare-clone repos: start, ship on your yes, merge notice, housekeeping and layout guards"
     },
     {
       "name": "orchestrator",
-      "source": "./mods/orchestrator",
+      "source": "./plugins/mods/orchestrator",
       "description": "Runs a multi-issue plan through subagents on escalating model ladders, with isolated QA, verified integration and live blockers"
     }
   ]

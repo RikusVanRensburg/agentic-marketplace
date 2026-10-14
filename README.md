@@ -23,21 +23,24 @@ Pull new versions later with `/plugin marketplace update agentic-marketplace`. T
 ## Layout
 
 ```
-.claude-plugin/marketplace.json   the catalog, one entry per plugin
-plugins/<name>/                   skill plugins
-  .claude-plugin/plugin.json        name, version, description
-  skills/<skill>/SKILL.md           one folder per skill
-  agents/<agent>.md                 subagents the skills dispatch
-  commands/                         slash commands, when a plugin has any
-mods/<name>/                      mods
-  .claude-plugin/plugin.json        name, version, description, options
-  hooks/hooks.json                  names the mod's one hooks module
-  hooks/                            the hooks module and its code
-  tests/                            unit tests, run by claude plugin test
-  README.md                         the mod's commands, tools and options
-docs/adr/                         decision records
-docs/specs/                       design specs
+.claude-plugin/marketplace.json     the catalog, one entry per plugin
+plugins/
+  skills/<name>/                    skill plugins
+    .claude-plugin/plugin.json        name, version, description
+    skills/<skill>/SKILL.md           one folder per skill
+    agents/<agent>.md                 subagents the skills dispatch
+    commands/                         slash commands, when a plugin has any
+  mods/<name>/                      mods
+    .claude-plugin/plugin.json        name, version, description, options
+    hooks/hooks.json                  names the mod's one hooks module
+    hooks/                            the hooks module and its code
+    tests/                            unit tests, run by claude plugin test
+    README.md                         the mod's commands, tools and options
+docs/adr/                           decision records
+docs/specs/                         design specs
 ```
+
+Every plugin sits under `plugins/`, in the folder for its type: `skills/` or `mods/`.
 
 A skill plugin groups skills that do one job. A mod changes Claude Code itself: commands, tools,
 panes, bands and hooks, written as code. A mod that needs another lists it under `dependencies` in
@@ -45,7 +48,7 @@ its `plugin.json`; keep both in this marketplace.
 
 ## Adding a plugin
 
-1. Make a folder: `plugins/<name>/` for skills, `mods/<name>/` for a mod.
+1. Make a folder for its type: `plugins/skills/<name>/` for skills, `plugins/mods/<name>/` for a mod.
 2. Give it a `.claude-plugin/plugin.json` with its name, version and description.
 3. Add an entry to `.claude-plugin/marketplace.json` pointing at the folder.
 
@@ -58,8 +61,8 @@ A new skill set or mod gets its own plugin, never a slot inside another one.
 - Validate every plugin you touched, and the catalog:
 
   ```
-  claude plugin validate plugins/<name>
+  claude plugin validate plugins/<skills|mods>/<name>
   claude plugin validate .
   ```
 
-- For a mod, run its tests too: `claude plugin test mods/<name>`.
+- For a mod, run its tests too: `claude plugin test plugins/mods/<name>`.

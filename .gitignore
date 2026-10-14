@@ -1,2 +1,2 @@
 # Written by the engine when it loads a mod from its folder
-mods/*/tsconfig.json
+plugins/mods/*/tsconfig.json

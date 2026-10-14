@@ -2,7 +2,7 @@
 ## Plugin Version Bumping
 
 Any time you modify a plugin's contents (skills, agents, scripts, config, or any file under a
-`plugins/{name}/` directory), the version in that plugin's `.claude-plugin/plugin.json` MUST be
+plugin's folder), the version in that plugin's `.claude-plugin/plugin.json` MUST be
 bumped before that change is **published**: before the branch carrying it is merged or pushed.
 
 **One bump per release, not one per commit.** A work-in-progress commit on a feature branch is
@@ -13,12 +13,11 @@ once, in the last of them.
 Because that removes the per-commit forcing function, treat the bump as part of finishing a branch:
 no branch touching `plugins/` is done until its plugin's version has moved.
 
-**Version file location:** `plugins/{plugin-name}/.claude-plugin/plugin.json`
+**Version file location:** `plugins/skills/{plugin-name}/.claude-plugin/plugin.json` for a skill
+plugin, `plugins/mods/{mod-name}/.claude-plugin/plugin.json` for a mod.
 
 **Version field:** `"version": "X.Y.Z"`. Increment the patch number (Z) for additions and fixes,
 the minor number (Y) for breaking changes to existing skills.
-
-Mods live in `mods/{mod-name}/` and follow the same rule: bump `mods/{mod-name}/.claude-plugin/plugin.json`.
 
 This is how users receive updates: they run `/plugin marketplace update`, which pulls the latest
 version. If you forget to bump, nobody gets the change.
@@ -31,7 +30,7 @@ Any time you modify a plugin or marketplace configuration, run the built-in vali
 committing:
 
 ```bash
-claude plugin validate plugins/{name}
+claude plugin validate plugins/{skills|mods}/{name}
 ```
 
 The path argument is required: a bare `claude plugin validate` errors on current CLI versions
