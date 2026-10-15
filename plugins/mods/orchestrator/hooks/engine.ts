@@ -310,6 +310,30 @@ export function start(plan: Plan, config: Config, closed: Closed, id: string, no
   return { state, effects }
 }
 
+// --- a run stored by an older version
+//
+// The store outlives the code: a run saved by an older mod is brought to this shape when it
+// loads, so no field it lacks can throw. A merge that was in flight in the old single slot
+// goes back to the queue, for the merge agent to take as a batch.
+export function upgrade(stored: RunState, defaults: Config): RunState {
+  const state = clone(stored) as RunState & { integrating?: unknown }
+  delete state.integrating
+  state.config = { ...defaults, ...state.config }
+  if (!state.config.merge?.length) state.config.merge = defaults.merge
+  for (const integration of Object.values(state.integration)) {
+    integration.merging ??= null
+    integration.round ??= 1
+    integration.infraRetried ??= false
+    integration.rounds ??= []
+    integration.flaky ??= []
+  }
+  const batched = new Set(Object.values(state.integration).flatMap(i => i.merging ?? []))
+  const stranded = Object.values(state.slices).filter(s => s.phase === 'integrating' && !batched.has(s.id)).map(s => s.id)
+  for (const id of stranded) (state.slices[id] as SliceState).phase = 'queued'
+  state.queue = [...stranded, ...(state.queue ?? []).filter(id => !stranded.includes(id))]
+  return state
+}
+
 // --- step
 
 export function step(prev: RunState, event: Event, now: number): Step {

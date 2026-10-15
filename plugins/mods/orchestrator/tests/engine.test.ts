@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Effect, Event, MergeReport, Report, RunState, SliceMerge, Step } from '../hooks/engine'
-import { collidedWith, inFlight, start, step, totals } from '../hooks/engine'
+import { collidedWith, inFlight, start, step, totals, upgrade } from '../hooks/engine'
 import { taskOf } from '../hooks/prompts'
 import type { Plan } from '../hooks/plan'
 
@@ -65,6 +65,39 @@ function harness(p: Plan = plan(), cfg = config) {
 const spawnOf = (effects: Effect[]) => effects.find((e): e is Extract<Effect, { kind: 'spawn' }> => e.kind === 'spawn')
 const kinds = (effects: Effect[]) => effects.map(e => e.kind)
 const merged = (slice: string): SliceMerge => ({ slice, outcome: 'merged' })
+
+// What 0.1.x stored: no merge ladder, a single integrating slot, an integration with no batch.
+function storedBy01(): RunState {
+  const s = start(plan(), config, { completed: [], other: [] }, 'old', 0).state as unknown as Record<string, unknown>
+  const { merge: _merge, ...oldConfig } = config
+  s.config = { ...oldConfig, qaCleanKeep: ['node_modules'] }
+  s.integration = { timebase: { branch: 'feat/RVR/payments', path: 'D:/r/i', isReady: true } }
+  s.integrating = '107'
+  const slices = s.slices as RunState['slices']
+  slices['107']!.phase = 'integrating'
+  return s as unknown as RunState
+}
+
+test('a run stored by 0.1.x is brought to this shape: the merge ladder, an idle integration, its merge queued again', () => {
+  const s = upgrade(storedBy01(), config)
+  expect(s.config.merge).toEqual(config.merge)
+  expect(s.integration.timebase).toMatchObject({ isReady: true, merging: null, round: 1, infraRetried: false, rounds: [], flaky: [] })
+  expect('integrating' in s).toBe(false)
+  expect(s.slices['107']!.phase).toBe('queued')
+  expect(s.queue).toEqual(['107'])
+})
+
+test('an upgraded run steps on: the queued merge goes to the merge agent', () => {
+  const s = { ...upgrade(storedBy01(), config), status: 'running' as const }
+  const { effects } = step(s, { kind: 'drop', slice: '109' }, 1)
+  expect(effects).toContainEqual({ kind: 'read-head', repo: 'timebase' })
+})
+
+test('a run stored by this version comes through unchanged', () => {
+  const h = harness()
+  h.ready()
+  expect(upgrade(h.state, config)).toEqual(h.state)
+})
 
 test('a run creates the integration branch first and starts nothing before it is ready', () => {
   const effects = start(plan(), config, { completed: [], other: [] }, 'run1', 0).effects

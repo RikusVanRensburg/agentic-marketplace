@@ -6,7 +6,7 @@ import type { Activity, SliceRow } from '../types'
 import type { Config, Rung } from './config'
 import { configOf, rungLabel } from './config'
 import type { Blocker, Effect, EndReason, Event, MergeOutcome, Report, Role, RunState, Usage } from './engine'
-import { atOf, inFlight, start, step, totals } from './engine'
+import { atOf, inFlight, start, step, totals, upgrade } from './engine'
 import type { Run } from './git'
 import { checkMerge, checkedOutAt, createSlice, devState, headOf, isLayoutPath, removeSlice } from './git'
 import { denyOf } from './guards'
@@ -741,12 +741,18 @@ export const register: Register = (on, opts) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     const config = await configNow($)
-    current = ((await $.store.get(RUN_KEY)) as RunState | undefined) ?? null
+    const stored = (await $.store.get(RUN_KEY)) as RunState | undefined
+    current = stored ? upgrade(stored, (configOf({}) as { isValid: true; config: Config }).config) : null
     isOwner = !!current && (await $.store.get(OWNER_KEY)) === (await $.session.id())
     if (isOwner) await $.store.set(GENERATION_KEY, GENERATION)
 
-    if (config) await registerTypes($, config)
-    if (current) await registerTypes($, current.config)
+    // The agent types failing to register must not take the tools down with them.
+    try {
+      if (config) await registerTypes($, config)
+      if (current) await registerTypes($, current.config)
+    } catch (err) {
+      $.ui.toast(`orchestrator: could not register its agent types: ${String(err)}`)
+    }
 
     await $.tool.register({
       name: 'launch',
