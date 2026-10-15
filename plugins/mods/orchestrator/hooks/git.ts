@@ -76,8 +76,36 @@ export async function devState(run: Run, path: string, baseSha: string): Promise
 }
 
 // Before QA: drop ignored build output, keeping the dependency folders named.
+//
+// The kept folders are never entered. `git clean -X` with `-e !node_modules` stops treating the
+// folder as ignored, so git walks into it, and pnpm links each workspace package into node_modules
+// as a junction on Windows: the walk went through the link and deleted the ignored files in the
+// package's real folder, tracked ones included (Core's package-lock.json, a Pulse `logs/` page).
+// A plain dry run lists an ignored folder as one entry without walking it, so the clean lists
+// first, drops every entry under a kept folder, and removes only what is left, by exact path.
+// Removing a folder deletes a junction inside it without following it. A folder that holds
+// nothing but ignored content is listed whole, kept folders and all; that costs a reinstall,
+// never a tracked file.
 export async function cleanForQa(run: Run, path: string, keep: string[]): Promise<void> {
-  await run(['git', 'clean', '-fdX', ...keep.flatMap(k => ['-e', `!${k}`])], { cwd: path, timeoutMs: 300_000 })
+  const listed = await run(['git', '-c', 'core.quotePath=false', 'clean', '-ndX'], { cwd: path, timeoutMs: 300_000 })
+  if (listed.exitCode !== 0) return
+
+  const targets = cleanTargets(listed.stdout, keep)
+  for (let i = 0; i < targets.length; i += 100) {
+    const batch = targets.slice(i, i + 100).map(target => `:(literal)${target}`)
+    await run(['git', 'clean', '-fdX', '--', ...batch], { cwd: path, timeoutMs: 300_000 })
+  }
+}
+
+// What a `git clean -ndX` listing says to remove, less anything inside a folder named in `keep`.
+export function cleanTargets(listing: string, keep: string[]): string[] {
+  const kept = new Set(keep.map(name => name.toLowerCase()))
+  return listing
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter(line => line.startsWith('Would remove '))
+    .map(line => line.slice('Would remove '.length).trim().replace(/^"(.*)"$/, '$1'))
+    .filter(target => target && !target.replace(/\/$/, '').split('/').some(part => kept.has(part.toLowerCase())))
 }
 
 // A fresh start for a model takeover: back to where the slice began.
@@ -149,4 +177,28 @@ export async function checkedOutAt(run: Run, root: string, branch: string): Prom
 
 export const isLayoutPath = (root: string, branch: string, path: string) => same(path, `${slashed(root)}/${branch}`)
 
-export const tail = (text: string, max = 1500) => (text.length > max ? `…${text.slice(-max)}` : text).trim()
+// The end of a command's output, for a blocker. A test runner names its failures where they
+// happen, which in a long suite is far above the last lines, so the lines that report a failure
+// are kept too and go first: a blocker that says only what passed cannot be acted on.
+export const tail = (text: string, max = 1500) => {
+  const failures = failureLines(text)
+  const end = text.length > max ? `…${text.slice(-max)}` : text
+  return (failures.length ? `${failures.join('\n')}\n…\n${end}` : end).trim()
+}
+
+const FAILURE = /(\bFailed!|\[FAIL\]|^\s*(×|✗|✖|FAIL)\s|\bFAILED\b|\berror (CS|MSB|TS)\d+|ERR_PNPM_|Test Files .*\bfailed\b|Tests .*\bfailed\b)/
+
+// The lines that report a failure, de-duplicated and capped, so one noisy failure cannot crowd
+// the rest out.
+export function failureLines(text: string, maxLines = 20, maxLength = 300): string[] {
+  const seen = new Set<string>()
+  const lines: string[] = []
+  for (const raw of text.replace(/\r/g, '').split('\n')) {
+    const line = raw.trim()
+    if (!line || !FAILURE.test(line) || seen.has(line)) continue
+    seen.add(line)
+    lines.push(line.length > maxLength ? `${line.slice(0, maxLength)}…` : line)
+    if (lines.length === maxLines) break
+  }
+  return lines
+}
