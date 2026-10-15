@@ -1,6 +1,6 @@
-// The working branch: which repo and branch the session works on, picked in the band or taken
-// from the folder the session opened. Like the rest it reads git live and draws nothing; the
-// scope it answers is what the band and the system prompt show.
+// The working branch: which repo and branch the session works on, taken from the folder the
+// session opened and followed by creates and housekeeping. Like the rest it reads git live; the
+// scope it answers is what the system prompt shows.
 
 import type { WorktreeChoice, WorktreeScope, WorktreeWorking } from '../types'
 import { branchAt, hasRef, lifecycleKeys, refNames, repoAt, slashed, worktrees, type Run } from './git'
@@ -14,17 +14,9 @@ export type Io = {
   isWindows: boolean
 }
 
-export const OTHER_BRANCH = ':branch'
-export const OTHER_REPO = ':repo'
-
 export function nameOf(root: string): string {
   const path = slashed(root)
   return path.slice(path.lastIndexOf('/') + 1)
-}
-
-export function labelOf(choice: WorktreeChoice): string {
-  const from = choice.base === null ? '' : ` (from ${choice.base})`
-  return choice.path === null ? `${choice.branch}${from}, no worktree` : `${choice.branch}${from}`
 }
 
 // The repos directly inside an org folder: each a folder holding `.bare`.
@@ -53,11 +45,11 @@ export async function branchesOf(run: Run, root: string): Promise<WorktreeChoice
   ]
 }
 
-// What the session's folder says: inside a worktree, that worktree is the working branch;
-// at a repo root, pick a branch; in a folder of repos, pick a repo first. Null otherwise.
+// What the session's folder says: inside a worktree, that worktree is the working branch; at a
+// repo root or in a folder of repos there is none until a worktree is created. Null otherwise.
 export async function scopeAt(io: Io, cwd: string): Promise<WorktreeScope | null> {
   const repo = await repoAt(io.run, cwd)
-  const empty: WorktreeScope = { org: null, repos: [], root: null, branches: [], working: null, isPicking: true, note: null }
+  const empty: WorktreeScope = { org: null, repos: [], root: null, branches: [], working: null }
 
   if (repo !== null) {
     if (!repo.isBareLayout) {
@@ -72,37 +64,12 @@ export async function scopeAt(io: Io, cwd: string): Promise<WorktreeScope | null
       return { ...empty, root: repo.root, branches }
     }
 
-    return { ...empty, root: repo.root, branches, working: { root: repo.root, ...tree }, isPicking: false }
+    return { ...empty, root: repo.root, branches, working: { root: repo.root, ...tree } }
   }
 
   const repos = await reposIn(io, cwd)
 
   return repos.length === 0 ? null : { ...empty, org: slashed(cwd), repos }
-}
-
-export async function pickRepo(io: Io, scope: WorktreeScope, root: string): Promise<WorktreeScope> {
-  return { ...scope, root, branches: await branchesOf(io.run, root), note: null }
-}
-
-// A branch from the list, or any branch typed in: local or on origin, with or without a worktree.
-export async function pickBranch(io: Io, scope: WorktreeScope, branch: string): Promise<WorktreeScope> {
-  const root = scope.root
-
-  if (root === null) {
-    return { ...scope, note: 'Pick a repo first.' }
-  }
-
-  const known = scope.branches.find(one => one.branch === branch)
-
-  if (known !== undefined) {
-    return { ...scope, working: { root, ...known }, isPicking: false, note: null }
-  }
-
-  if ((await hasRef(io.run, root, `refs/heads/${branch}`)) || (await hasRef(io.run, root, `refs/remotes/origin/${branch}`))) {
-    return { ...scope, working: { root, branch, path: null, base: null }, isPicking: false, note: null }
-  }
-
-  return { ...scope, note: `There is no branch ${branch} in ${nameOf(root)}, locally or on origin.` }
 }
 
 // A worktree just created: it becomes the working branch when it is in the scope's repo, or
@@ -118,11 +85,11 @@ export async function adopt(io: Io, scope: WorktreeScope, made: { branch: string
 
   const branches = await branchesOf(io.run, root)
 
-  return { ...scope, root, branches, working: { root, branch: made.branch, path, base: made.base }, isPicking: false, note: null }
+  return { ...scope, root, branches, working: { root, branch: made.branch, path, base: made.base } }
 }
 
 // The branch list read again, and the working branch's worktree and base with it. A working
-// branch deleted elsewhere hands back to the picker.
+// branch deleted elsewhere leaves no working branch.
 export async function refresh(io: Io, scope: WorktreeScope): Promise<WorktreeScope> {
   const root = scope.working?.root ?? scope.root
 
@@ -147,7 +114,7 @@ export async function refresh(io: Io, scope: WorktreeScope): Promise<WorktreeSco
     return { ...scope, branches, working: { ...working, path: null } }
   }
 
-  return { ...scope, root, branches, working: null, isPicking: true, note: `${working.branch} is gone; pick another branch.` }
+  return { ...scope, root, branches, working: null }
 }
 
 // Housekeeping removed the working branch: its base takes over.
@@ -161,14 +128,6 @@ export function afterClean(scope: WorktreeScope, cleaned: { branch: string; base
   return { ...scope, working: { root: working.root, branch: cleaned.base, path: cleaned.baseWorktree, base: null } }
 }
 
-export function summaryOf(working: WorktreeWorking): string {
-  const from = working.base === null ? '' : `, cut from ${working.base}`
-
-  return working.path === null
-    ? `${nameOf(working.root)} on ${working.branch}${from}, which has no worktree yet`
-    : `${nameOf(working.root)} on ${working.branch}${from}, worktree ${working.path}`
-}
-
 export function promptText(working: WorktreeWorking): string {
   const where =
     working.path === null
@@ -177,7 +136,7 @@ export function promptText(working: WorktreeWorking): string {
 
   return [
     '# Working environment',
-    `The person picked ${nameOf(working.root)} (${working.root}) as the working repo. ${where}`,
+    `The working repo is ${nameOf(working.root)} (${working.root}). ${where}`,
     'Other folders, repos and worktrees stay open to read and use when the task needs them; this only says where the work goes by default.',
     'The /wt commands and worktree_* tools act on this repo and branch unless told otherwise.',
   ].join('\n')

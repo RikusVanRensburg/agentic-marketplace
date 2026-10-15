@@ -1,38 +1,21 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, PromptOrigin, Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 import type {
-  WorktreeCleanPlan,
+  WorktreeCleanArgs,
   WorktreeCreateArgs,
   WorktreeCreated,
   WorktreeOutcome,
-  WorktreePending,
   WorktreePr,
-  WorktreePrepared,
   WorktreeScope,
-  WorktreeShipPlan,
+  WorktreeShipArgs,
 } from '../types'
 import { hasRef, lifecycleKeys, repoAt, setKey, type Run } from './git'
-import { scopeRow } from './band'
 import { gitCalls, layoutDeny, segmentsOf, stashVerdict, worktreeAddOf } from './guards'
 import { PLUGIN, check, create, list, prOf, prepareClean, prepareShip, runClean, runShip, type Ctx } from './lifecycle'
 import { join, looksLikeWindows, samePath } from './paths'
-import {
-  OTHER_BRANCH,
-  OTHER_REPO,
-  adopt,
-  afterClean,
-  pickBranch,
-  pickRepo,
-  promptText,
-  refresh,
-  scopeAt,
-  summaryOf,
-  type Io,
-} from './working'
+import { adopt, afterClean, promptText, refresh, scopeAt, type Io } from './working'
 
-const pending = atom({ plugin: 'worktree-lifecycle', key: 'pending' } as const, [])
-const busy = atom({ plugin: 'worktree-lifecycle', key: 'busy' } as const, null)
 const scope = atom({ plugin: 'worktree-lifecycle', key: 'scope' } as const, null)
 
 // What the model's tool calls carry, read without trusting their shape.
@@ -42,7 +25,7 @@ const HELP = [
   '/wt new <type> <slug> [--base <branch>]   or   /wt new <branch> [--base <branch>]',
   '/wt ship [<branch>] [--base <branch>] [--title <title>] [--ready]',
   '/wt clean <branch>',
-  '/wt sweep      offer housekeeping for every merged branch this mod created',
+  '/wt sweep      housekeep every merged branch this mod created',
   '/wt check      ask GitHub now whether those PRs merged',
   '/wt status     the branches this mod created in this repo',
 ].join('\n')
@@ -119,124 +102,33 @@ async function refreshScope($: EngineInterface): Promise<WorktreeScope | null> {
   return fresh
 }
 
-// The person picked in the band. The model hears of it at once, and from the system prompt after.
-async function setScope($: EngineInterface, next: WorktreeScope): Promise<void> {
-  const before = (await read($, scope))?.working ?? null
-  await update($, scope, () => next)
+// Ship, clean and sweep run at once: whoever calls them has the person's yes, typed as a /wt
+// command, given to the model, or asked of another mod.
+async function shipNow($: EngineInterface, caller: string, args: WorktreeShipArgs): Promise<WorktreeOutcome<{ text: string; url: string | null }>> {
+  const ctx = await ctxOf($, caller)
+  const prepared = await prepareShip(ctx, args, (await aimOf($)).cwd)
 
-  if (next.working !== null && (before?.branch !== next.working.branch || before.root !== next.working.root)) {
-    const text = `[${PLUGIN}] The person set the working environment: ${summaryOf(next.working)}.`
-    await $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } })
-  }
+  return prepared.isDone ? runShip(ctx, prepared.plan) : prepared
 }
 
-async function chooseRepo($: EngineInterface, root: string): Promise<void> {
-  const current = await read($, scope)
+// Housekeeping the working branch hands it over to its base.
+async function cleanNow($: EngineInterface, caller: string, args: WorktreeCleanArgs, cwd: string): Promise<WorktreeOutcome<{ text: string }>> {
+  const ctx = await ctxOf($, caller)
+  const prepared = await prepareClean(ctx, args, cwd, await $.session.cwd())
 
-  if (current !== null && root !== '') {
-    const picked = await pickRepo(await ioOf($), current, root)
-    await update($, scope, () => picked)
-  }
-}
-
-async function chooseBranch($: EngineInterface, branch: string): Promise<void> {
-  const current = await read($, scope)
-
-  if (current !== null && branch.trim() !== '') {
-    await setScope($, await pickBranch(await ioOf($), current, branch.trim()))
-  }
-}
-
-// The collapsed band's dropdown: another worktree, or back to the pickers.
-async function chooseWorking($: EngineInterface, value: string): Promise<void> {
-  const current = await read($, scope)
-
-  if (current === null) {
-    return
+  if (!prepared.isDone) {
+    return prepared
   }
 
-  if (value === OTHER_BRANCH) {
-    await update($, scope, () => ({ ...current, isPicking: true, note: null }))
-  } else if (value === OTHER_REPO) {
-    await update($, scope, () => ({ ...current, root: null, branches: [], isPicking: true, note: null }))
-  } else if (value !== current.working?.branch) {
-    await chooseBranch($, value)
+  const done = await runClean(ctx, prepared.plan)
+
+  if (done.isDone) {
+    const current = await read($, scope)
+    if (current !== null) await update($, scope, () => afterClean(current, prepared.plan))
+    await refreshScope($)
   }
-}
 
-async function keepWorking($: EngineInterface): Promise<void> {
-  const current = await read($, scope)
-
-  if (current?.working != null) {
-    const kept = await refresh(await ioOf($), { ...current, root: current.working.root, isPicking: false, note: null })
-    await update($, scope, () => kept)
-  }
-}
-
-// The person's own gesture: Enter at the prompt, the Remote Control bridge, or the
-// desktop app's host. A plugin's `$.command.run` and a scheduled prompt are not.
-function isPerson(origin: PromptOrigin): boolean {
-  return origin.kind === 'composer' || origin.kind === 'bridge' || origin.kind === 'sdk'
-}
-
-// What the person and the model are told when a lifecycle step ran or failed.
-async function report($: EngineInterface, text: string): Promise<void> {
-  $.ui.toast(text)
-  await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: `[${PLUGIN}] ${text}` }] } })
-}
-
-async function offer($: EngineInterface, item: Omit<WorktreePending, 'id'>): Promise<WorktreePrepared> {
-  const id = `${item.plan.kind}:${item.plan.root}:${item.plan.branch}`
-  await update($, pending, queue => [...queue.filter(one => one.id !== id), { ...item, id }])
-
-  return { id, title: item.title }
-}
-
-function shipOffer(plan: WorktreeShipPlan, lines: string[]): Omit<WorktreePending, 'id'> {
-  const confirm = plan.openPr ? 'Push' : plan.isDraft ? 'Push and open draft PR' : 'Push and open PR'
-
-  return { title: `Ship ${plan.branch}?`, lines, confirm, plan }
-}
-
-function cleanOffer(plan: WorktreeCleanPlan, lines: string[], title?: string): Omit<WorktreePending, 'id'> {
-  return { title: title ?? `Housekeep ${plan.branch}?`, lines, confirm: 'Housekeep', plan }
-}
-
-async function runPlan($: EngineInterface, plan: WorktreeShipPlan | WorktreeCleanPlan): Promise<string> {
-  const ctx = await ctxOf($, PLUGIN)
-  await update($, busy, () => `${plan.kind === 'ship' ? 'Shipping' : 'Housekeeping'} ${plan.branch}...`)
-
-  try {
-    const outcome = plan.kind === 'ship' ? await runShip(ctx, plan) : await runClean(ctx, plan)
-
-    if (outcome.isDone && plan.kind === 'clean') {
-      const current = await read($, scope)
-      if (current !== null) await update($, scope, () => afterClean(current, plan))
-      await refreshScope($)
-    }
-
-    return outcome.isDone ? outcome.text : outcome.reason
-  } finally {
-    await update($, busy, () => null)
-  }
-}
-
-// The person pressed the band's button: this is their yes.
-async function confirm($: EngineInterface, id: string): Promise<void> {
-  let taken: WorktreePending | undefined
-
-  await update($, pending, queue => {
-    taken = queue.find(one => one.id === id)
-    return queue.filter(one => one.id !== id)
-  })
-
-  if (taken !== undefined) {
-    await report($, await runPlan($, taken.plan))
-  }
-}
-
-async function later($: EngineInterface, id: string): Promise<void> {
-  await update($, pending, queue => queue.filter(one => one.id !== id))
+  return done
 }
 
 // A merge of a branch this mod created, seen for the first time in any session.
@@ -249,16 +141,8 @@ async function announce($: EngineInterface, ctx: Ctx, root: string, pr: Worktree
 
   await setKey(ctx.run, root, pr.branch, 'Notified', 'true')
   $.ui.toast(`PR #${pr.number} merged: ${pr.branch}`)
-  void $.ui.notify(`PR #${pr.number} merged into ${pr.base}. Housekeep ${pr.branch}?`, { title: PLUGIN })
+  void $.ui.notify(`PR #${pr.number} merged into ${pr.base}. Housekeep it with /wt clean ${pr.branch}.`, { title: PLUGIN })
   await $.worktree.merged({ root, branch: pr.branch, number: pr.number, url: pr.url, base: pr.base })
-
-  const prepared = await prepareClean(ctx, { branch: pr.branch, cwd: root }, root, await $.session.cwd())
-
-  if (prepared.isDone) {
-    await offer($, cleanOffer(prepared.plan, prepared.lines, `PR #${pr.number} merged. Housekeep ${pr.branch}?`))
-  } else {
-    $.ui.toast(`PR #${pr.number} merged, but ${pr.branch} is not ready to housekeep: ${prepared.reason}`)
-  }
 }
 
 async function checkNow($: EngineInterface, ctx: Ctx, cwd: string): Promise<WorktreeOutcome<{ prs: WorktreePr[] }>> {
@@ -275,24 +159,23 @@ async function checkNow($: EngineInterface, ctx: Ctx, cwd: string): Promise<Work
   return { isDone: true, prs: checked.prs }
 }
 
-async function sweep($: EngineInterface, ctx: Ctx, cwd: string): Promise<WorktreeOutcome<{ prepared: WorktreePrepared[]; skipped: string[] }>> {
-  const checked = await check(ctx, cwd)
+async function sweep($: EngineInterface, caller: string, cwd: string): Promise<WorktreeOutcome<{ cleaned: string[]; skipped: string[] }>> {
+  const checked = await check(await ctxOf($, caller), cwd)
 
   if (!checked.isDone) {
     return checked
   }
 
-  const prepared: WorktreePrepared[] = []
+  const cleaned: string[] = []
   const skipped: string[] = []
-  const sessionCwd = await $.session.cwd()
 
   for (const pr of checked.prs.filter(one => one.state === 'MERGED')) {
-    const one = await prepareClean(ctx, { branch: pr.branch, cwd: checked.root }, checked.root, sessionCwd)
-    if (one.isDone) prepared.push(await offer($, cleanOffer(one.plan, one.lines)))
-    else skipped.push(`${pr.branch}: ${one.reason}`)
+    const done = await cleanNow($, caller, { branch: pr.branch, cwd: checked.root }, checked.root)
+    if (done.isDone) cleaned.push(done.text)
+    else skipped.push(`${pr.branch}: ${done.reason}`)
   }
 
-  return { isDone: true, prepared, skipped }
+  return { isDone: true, cleaned, skipped }
 }
 
 // A GitHub event the session was sent for a pull request; acted on only when it is a merge
@@ -428,18 +311,16 @@ export const register: Register = on => {
     value: await createAimed($, e, next.origin.plugin),
   }))
 
-  on('worktree.ship', async ($, e, next) => {
-    const prepared = await prepareShip(await ctxOf($, next.origin.plugin), e, (await aimOf($)).cwd)
-    return { value: prepared.isDone ? { isDone: true, ...(await offer($, shipOffer(prepared.plan, prepared.lines))) } : prepared }
-  })
+  on('worktree.ship', async ($, e, next) => ({
+    value: await shipNow($, next.origin.plugin, e),
+  }))
 
-  on('worktree.clean', async ($, e, next) => {
-    const prepared = await prepareClean(await ctxOf($, next.origin.plugin), e, (await aimOf($)).cwd, await $.session.cwd())
-    return { value: prepared.isDone ? { isDone: true, ...(await offer($, cleanOffer(prepared.plan, prepared.lines))) } : prepared }
-  })
+  on('worktree.clean', async ($, e, next) => ({
+    value: await cleanNow($, next.origin.plugin, e, (await aimOf($)).cwd),
+  }))
 
   on('worktree.sweep', async ($, e, next) => ({
-    value: await sweep($, await ctxOf($, next.origin.plugin), e.cwd ?? (await aimOf($)).cwd),
+    value: await sweep($, next.origin.plugin, e.cwd ?? (await aimOf($)).cwd),
   }))
 
   on('worktree.check', async ($, e, next) => ({
@@ -460,7 +341,7 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'worktree_new',
       description:
-        'Create a branch and its worktree at <repo>/<branch>, cut from the working branch the person picked (or base); with none picked, from the branch the working directory is on. It becomes the working branch. The name follows the repo\'s branch rule; with none, <type>/<initials>/<slug>. Use instead of git worktree add or EnterWorktree.',
+        'Create a branch and its worktree at <repo>/<branch>, cut from the working branch (or base); with none, from the branch the working directory is on. It becomes the working branch. The name follows the repo\'s branch rule; with none, <type>/<initials>/<slug>. Use instead of git worktree add or EnterWorktree.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -475,7 +356,7 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'worktree_ship',
       description:
-        'Prepare to push a branch and open its PR (a draft unless isReady). It does not push: the person confirms in the band above the prompt. Tell them it is waiting there.',
+        "Push a branch and open its PR (a draft unless isReady). Only on the person's yes.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -491,13 +372,13 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'worktree_clean',
       description:
-        'Prepare housekeeping for a merged branch: fast-forward its base, remove its worktree, delete the branch with -d, then its remote-tracking ref. It does not run: the person confirms in the band above the prompt.',
+        'Housekeep a merged branch: fast-forward its base, remove its worktree, delete the branch with -d, then its remote-tracking ref. Only when the person asks.',
       inputSchema: { type: 'object', properties: { branch: { type: 'string' } }, required: ['branch'] },
     })
 
     await $.tool.register({
       name: 'worktree_sweep',
-      description: 'Find every branch this mod created whose PR merged, and offer housekeeping for each in the band above the prompt.',
+      description: 'Housekeep every branch this mod created whose PR merged. Only when the person asks.',
     })
 
     await $.tool.register({
@@ -555,42 +436,28 @@ export const register: Register = on => {
     }
 
     if (sub === 'ship' || sub === 'clean') {
-      const prepared =
+      if (sub === 'clean' && positional[0] === undefined) {
+        return { text: 'Name the branch to housekeep: /wt clean <branch>' }
+      }
+
+      const done =
         sub === 'ship'
-          ? await prepareShip(ctx, { branch: positional[0], base: text(flags.get('base')), title: text(flags.get('title')), isReady: flags.get('ready') === true }, cwd)
-          : positional[0] === undefined
-            ? ({ isDone: false, reason: 'Name the branch to housekeep: /wt clean <branch>' } as const)
-            : await prepareClean(ctx, { branch: positional[0] }, cwd, await $.session.cwd())
+          ? await shipNow($, PLUGIN, { branch: positional[0], base: text(flags.get('base')), title: text(flags.get('title')), isReady: flags.get('ready') === true })
+          : await cleanNow($, PLUGIN, { branch: positional[0] ?? '' }, cwd)
 
-      if (!prepared.isDone) {
-        return { text: prepared.reason }
-      }
-
-      // Typed by the person, the command is their yes; anyone else's run waits in the band.
-      if (isPerson(e.origin)) {
-        const done = await runPlan($, prepared.plan)
-        return { text: done, context: [`[${PLUGIN}] ${done}`] }
-      }
-
-      const item = prepared.plan.kind === 'ship' ? shipOffer(prepared.plan, prepared.lines) : cleanOffer(prepared.plan, prepared.lines)
-      const offered = await offer($, item)
-
-      return { text: `${offered.title} Waiting for the person's yes in the band above the prompt.` }
+      return done.isDone ? { text: done.text, context: [`[${PLUGIN}] ${done.text}`] } : { text: done.reason }
     }
 
     if (sub === 'sweep') {
-      const swept = await sweep($, ctx, cwd)
+      const swept = await sweep($, PLUGIN, cwd)
 
       if (!swept.isDone) {
         return { text: swept.reason }
       }
 
-      const lines = [
-        swept.prepared.length === 0 ? 'Nothing merged is waiting to be housekept.' : `${swept.prepared.length} merged branch${swept.prepared.length === 1 ? '' : 'es'} offered in the band above the prompt.`,
-        ...swept.skipped.map(line => `Skipped ${line}`),
-      ]
+      const lines = [...swept.cleaned, ...swept.skipped.map(line => `Skipped ${line}`)]
 
-      return { text: lines.join('\n') }
+      return { text: lines.length === 0 ? 'Nothing merged is waiting to be housekept.' : lines.join('\n') }
     }
 
     if (sub === 'check') {
@@ -631,15 +498,9 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'mcp__worktree-lifecycle__worktree_ship' }, async ($, e) => {
     const input = { branch: str(e.branch), base: str(e.base), title: str(e.title), body: str(e.body), isReady: e.isReady === true }
-    const prepared = await prepareShip(await ctxOf($, PLUGIN), input, (await aimOf($)).cwd)
+    const done = await shipNow($, PLUGIN, input)
 
-    if (!prepared.isDone) {
-      return { deny: prepared.reason }
-    }
-
-    const offered = await offer($, shipOffer(prepared.plan, prepared.lines))
-
-    return { result: `${offered.title} ${prepared.lines.join('. ')}. Nothing is pushed until the person presses the button in the band above the prompt.` }
+    return done.isDone ? { result: done.text } : { deny: done.reason }
   })
 
   on('tool.call', { tool: 'mcp__worktree-lifecycle__worktree_clean' }, async ($, e) => {
@@ -649,22 +510,16 @@ export const register: Register = on => {
       return { deny: 'Name the branch to housekeep.' }
     }
 
-    const prepared = await prepareClean(await ctxOf($, PLUGIN), { branch }, (await aimOf($)).cwd, await $.session.cwd())
+    const done = await cleanNow($, PLUGIN, { branch }, (await aimOf($)).cwd)
 
-    if (!prepared.isDone) {
-      return { deny: prepared.reason }
-    }
-
-    const offered = await offer($, cleanOffer(prepared.plan, prepared.lines))
-
-    return { result: `${offered.title} ${prepared.lines.join('. ')}. Nothing runs until the person presses the button in the band above the prompt.` }
+    return done.isDone ? { result: done.text } : { deny: done.reason }
   })
 
   on('tool.call', { tool: 'mcp__worktree-lifecycle__worktree_sweep' }, async $ => {
-    const swept = await sweep($, await ctxOf($, PLUGIN), (await aimOf($)).cwd)
+    const swept = await sweep($, PLUGIN, (await aimOf($)).cwd)
 
     return swept.isDone
-      ? { result: `${swept.prepared.length} merged branch(es) offered for housekeeping in the band.${swept.skipped.map(line => ` Skipped ${line}.`).join('')}` }
+      ? { result: [`${swept.cleaned.length} merged branch(es) housekept.`, ...swept.cleaned, ...swept.skipped.map(line => `Skipped ${line}.`)].join(' ') }
       : { deny: swept.reason }
   })
 
@@ -706,56 +561,4 @@ export const register: Register = on => {
     const verdict = await guardShell($, e.command)
     return verdict === null ? next(e) : { deny: `${PLUGIN}: ${verdict}` }
   }).catch(($, e, next) => (next.called ? next(e) : { deny: `${PLUGIN}: its git guard failed on this command.` }))
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const queue = await read($, pending)
-    const working = await read($, busy)
-    const where = await read($, scope)
-    const item = queue[0]
-
-    // The band is never raised on mobile, whose table has no Input or Select.
-    if (e.surface === 'mobile' || e.props.hasSurvey || (item === undefined && working === null && where === null)) {
-      return next(e)
-    }
-
-    const { Box, Button, Text } = $.ui.resolve(e)
-
-    if (item === undefined && working === null && where !== null) {
-      if (!where.isPicking && where.working === null) {
-        return next(e)
-      }
-
-      return scopeRow($.ui.resolve(e), e.surface, where, {
-        repo: value => void chooseRepo($, value),
-        branch: value => void chooseBranch($, value),
-        working: value => void chooseWorking($, value),
-        keep: () => void keepWorking($),
-      })
-    }
-
-    if (working !== null || item === undefined) {
-      return (
-        <Box>
-          <Text dimColor>{working}</Text>
-        </Box>
-      )
-    }
-
-    return (
-      <Box flexDirection="column">
-        <Text bold>
-          {item.title}
-          {queue.length > 1 ? `  (1 of ${queue.length})` : ''}
-        </Text>
-        {item.lines.map(line => (
-          <Text dimColor>  {line}</Text>
-        ))}
-        <Box>
-          <Button key="confirm" variant="primary" label={item.confirm} onPress={() => confirm($, item.id)} />
-          <Text> </Text>
-          <Button key="later" label="Later" onPress={() => later($, item.id)} />
-        </Box>
-      </Box>
-    )
-  })
 }
