@@ -4,7 +4,7 @@
 import type { RunView, SliceRow, FinalRow, Group } from '../types'
 import { rungLabel } from './config'
 import type { AgentRef, Phase, Round, RunState, SliceState } from './engine'
-import { totals } from './engine'
+import { atOf, totals } from './engine'
 
 const GROUP: Record<Phase, Group> = {
   waiting: 'waiting',
@@ -29,10 +29,11 @@ const STAGE: Record<Phase, number> = {
 
 // An agent's name in the background task list and the pane: `orch <slice> <role> r<n> #<seq>`.
 export const taskNameOf = (ref: Pick<AgentRef, 'key' | 'slice' | 'repo' | 'role' | 'round'>) =>
-  `orch ${ref.slice ?? `final ${ref.repo}`} ${ref.role} r${ref.round} #${ref.key.split(':').pop()}`
+  `orch ${atOf(ref).replace(':', ' ')} ${ref.role} r${ref.round} #${ref.key.split(':').pop()}`
 
+// A slice's live agent, or with no slice the repo's final QA or its fixer.
 const liveAgent = (state: RunState, slice: string | undefined, repo: string) =>
-  Object.values(state.agents).find(a => (slice ? a.slice === slice : !a.slice && a.repo === repo))
+  Object.values(state.agents).find(a => (slice ? a.slice === slice : !a.slice && a.repo === repo && a.role !== 'merge'))
 
 const tokensOf = (rounds: Round[]) => rounds.reduce((sum, r) => sum + (r.usage ? r.usage.input + r.usage.output + r.usage.cacheRead + r.usage.cacheWrite : 0), 0)
 

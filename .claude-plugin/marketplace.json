@@ -70,7 +70,7 @@
     {
       "name": "orchestrator",
       "source": "./plugins/mods/orchestrator",
-      "description": "/orchestrate runs a multi-issue plan through subagents: dev and isolated QA per slice on escalating model ladders, verified one-at-a-time integration, final QA. Needs worktree-lifecycle",
+      "description": "/orchestrate runs a multi-issue plan through subagents: dev and isolated QA per slice on escalating model ladders, a merge agent that merges and verifies each batch, final QA. Needs worktree-lifecycle",
       "homepage": "https://github.com/RikusVanRensburg/agentic-marketplace/tree/main/plugins/mods/orchestrator",
       "keywords": [
         "orchestration",

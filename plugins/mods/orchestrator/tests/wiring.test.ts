@@ -3,9 +3,9 @@ import { expect, test } from 'claude-code/testing'
 import type { Effect, RunState } from '../hooks/engine'
 import { inFlight, start, step } from '../hooks/engine'
 import type { Ran, Run } from '../hooks/git'
-import { createSlice, devState, integrate, parseWorktrees, removeSlice } from '../hooks/git'
+import { createSlice, devState, parseWorktrees, removeSlice } from '../hooks/git'
 import { denyOf, shellDeny } from '../hooks/guards'
-import { SYSTEM, taskOf, trailerOf, typeName } from '../hooks/prompts'
+import { SYSTEM, TOOLS, taskOf, trailerOf, typeName } from '../hooks/prompts'
 
 import { config, plan } from './fixture'
 
@@ -37,6 +37,23 @@ test('the deny-list lets ordinary work through', () => {
   for (const command of ['dotnet test', 'git status', 'git add -A && git commit -m "feat: x"', 'git diff HEAD~1', 'git checkout -- src/a.cs', 'git checkout --theirs calc.py', 'git checkout --ours -- calc.py', 'git reset --hard HEAD', 'gh issue view 107 --comments', 'gh api repos/o/r/issues/107/comments', 'gh pr view 3']) {
     expect({ command, why: shellDeny(command, WT) }).toEqual({ command, why: null })
   }
+})
+
+test('a hard reset goes to HEAD, or to a commit the orchestrator named for that agent', () => {
+  expect(shellDeny('git reset --hard HEAD~1', WT)).toBeNull()
+  expect(shellDeny('git reset --hard', WT)).toBeNull()
+  expect(shellDeny('git reset --hard 7afe1a96b', WT)).toMatch(/reset only to HEAD/)
+  expect(shellDeny('git reset --hard 7afe1a96b', WT, ['7afe1a96b0c1d2e3f4'])).toBeNull()
+  expect(shellDeny('git reset --hard "7afe1a96b0c1d2e3f4"', WT, ['7afe1a96b0c1d2e3f4'])).toBeNull()
+  expect(shellDeny('git reset --hard 7afe1a9 && git reset --hard origin/dev', WT, ['7afe1a96b0c1d2e3f4'])).toMatch(/reset only to HEAD or 7afe1a96b0c1d2e3f4/)
+  expect(shellDeny('git reset --hard 7af', WT, ['7afe1a96b0c1d2e3f4'])).toMatch(/reset only/)
+})
+
+test('the merge agent may not edit files, and its prompt never lets it resolve or fix', () => {
+  expect(TOOLS.merge).not.toContain('Edit')
+  expect(TOOLS.merge).not.toContain('Write')
+  expect(SYSTEM.merge).toMatch(/never resolve a conflict and never fix a test/)
+  expect(SYSTEM.merge).toMatch(/a second time before you act on it/)
 })
 
 test('an agent stays in its worktree, for the shell and for file edits', () => {
@@ -78,40 +95,6 @@ test('dev state reads a clean, advanced tree', async () => {
   expect(await devState(dirty.run, WT, 'b0')).toEqual({ isClean: false, isAdvanced: false })
 })
 
-test('a conflicting merge aborts and names the files; it never resolves', async () => {
-  const git = fakeGit([
-    [/rev-parse --verify --quiet HEAD/, { stdout: 'before\n' }],
-    [/rev-parse --verify --quiet feat/, { stdout: 'tip\n' }],
-    [/merge-base --is-ancestor/, { exitCode: 1 }],
-    [/merge --no-ff/, { exitCode: 1, stderr: 'CONFLICT' }],
-    [/diff --name-only --diff-filter=U/, { stdout: 'src/a.cs\nsrc/b.cs\n' }],
-  ])
-  const shell = async () => ({ exitCode: 0, tail: '' })
-  const merge = await integrate(git.run, shell, 'D:/r/i', 'feat/x', 'Merge feat/x', { build: 'b', test: 't' })
-  expect(merge).toEqual({ isMerged: false, conflicts: ['src/a.cs', 'src/b.cs'] })
-  expect(git.calls).toContain('git merge --abort')
-  expect(git.calls).toContain('git reset --hard before')
-})
-
-test('a red suite after a clean merge resets to the HEAD before it', async () => {
-  const git = fakeGit([
-    [/rev-parse --verify --quiet HEAD/, { stdout: 'before\n' }],
-    [/rev-parse --verify --quiet feat/, { stdout: 'tip\n' }],
-    [/merge-base --is-ancestor/, { exitCode: 1 }],
-  ])
-  const shell = async (command: string) => ({ exitCode: command === 't' ? 1 : 0, tail: '3 failed' })
-  const merge = await integrate(git.run, shell, 'D:/r/i', 'feat/x', 'Merge feat/x', { build: 'b', test: 't' })
-  expect(merge).toEqual({ isMerged: false, failure: 'test exited 1: 3 failed' })
-  expect(git.calls).toContain('git reset --hard before')
-})
-
-test('a branch already merged by an earlier attempt counts as merged without merging again', async () => {
-  const git = fakeGit([[/rev-parse --verify --quiet/, { stdout: 'sha\n' }]])
-  const merge = await integrate(git.run, async () => ({ exitCode: 0, tail: '' }), 'D:/r/i', 'feat/x', 'm', { build: 'b', test: 't' })
-  expect(merge).toEqual({ isMerged: true, commit: 'sha' })
-  expect(git.calls.some(c => c.includes('merge --no-ff'))).toBe(false)
-})
-
 test('worktree porcelain parses paths and branches', () => {
   expect(parseWorktrees('worktree D:\\r\\.bare\r\nbare\r\n\r\nworktree D:/r/dev\r\nHEAD abc\r\nbranch refs/heads/dev\r\n')).toEqual([
     { path: 'D:/r/.bare', branch: null },
@@ -119,9 +102,16 @@ test('worktree porcelain parses paths and branches', () => {
   ])
 })
 
+// A run past its green baseline, with 107's dev agent spawned.
 function running(): RunState {
   let s = start(plan(), config, { completed: [], other: [] }, 'run1', 0).state
   s = step(s, { kind: 'integration-ready', repo: 'timebase', path: 'D:/r/i' }, 1).state
+  s = step(s, { kind: 'head-read', repo: 'timebase', head: 'h0' }, 1).state
+  const merge = Object.values(s.agents).find(a => a.role === 'merge')!.key
+  s = step(s, { kind: 'spawned', key: merge, agentId: 'm0' }, 1).state
+  s = step(s, { kind: 'report', agentId: 'm0', report: { kind: 'merge', baseRed: false, failing: [], slices: [], flaky: [], summary: '' } }, 1).state
+  s = step(s, { kind: 'ended', agentId: 'm0', reason: 'answer' }, 1).state
+  s = step(s, { kind: 'merge-checked', repo: 'timebase', problem: null, commits: {} }, 1).state
   s = step(s, { kind: 'slice-ready', slice: '107', path: WT, baseSha: 'b0' }, 1).state
   return s
 }
@@ -168,16 +158,6 @@ test('an answered blocker resumes the slice on the rung it stopped on, with the 
   expect(state.slices['108']!.phase).toBe('waiting')
   expect(effects.find(e => e.kind === 'spawn')).toMatchObject({ role: 'dev', round: 3, rung: { model: 'opus' } })
   expect(taskOf(state, 'dev', 'timebase', '107', 3, config.ladders['haiku-first'][2]!)).toMatch(/answered the blocker on this slice: use decimal/)
-})
-
-test('a slice blocked at integration goes back to the queue on retry', () => {
-  let s = running()
-  s.slices['107']!.phase = 'integrating'
-  s.integrating = '107'
-  s = step(s, { kind: 'integrated', slice: '107', isMerged: false, failure: 'flaky' }, 1).state
-  const { state, effects } = step(s, { kind: 'retry', at: '107', answer: 'it was a flaky test, merge again' }, 2)
-  expect(effects).toContainEqual({ kind: 'integrate', slice: '107' })
-  expect(state.slices['107']!.phase).toBe('integrating')
 })
 
 test('after a reload, the effects that were running go again', () => {
@@ -233,15 +213,4 @@ test('QA is told history is not evidence, and an answer never overrides criteria
 test('dev commits failing tests before the code, and QA checks that order where behaviour changes', () => {
   expect(SYSTEM.dev).toMatch(/commit the failing tests on their own first/)
   expect(SYSTEM.qa).toMatch(/committed before the code that makes them pass; never check out another commit/)
-})
-
-test('integrating a slice that already merged, its branch since deleted, counts as merged', async () => {
-  const git = fakeGit([
-    [/rev-parse --verify --quiet HEAD/, { stdout: 'head\n' }],
-    [/rev-parse --verify --quiet feat\/x/, { exitCode: 1 }],
-    [/log --merges/, { stdout: 'm1\tMerge feat/y (y Other)\nm2\tMerge feat/x (x Add x)\n' }],
-  ])
-  const merge = await integrate(git.run, async () => ({ exitCode: 0, tail: '' }), 'D:/r/i', 'feat/x', 'Merge feat/x (x Add x)', { build: 'b', test: 't' })
-  expect(merge).toEqual({ isMerged: true, commit: 'm2' })
-  expect(git.calls.some(c => c.includes('merge --no-ff'))).toBe(false)
 })

@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Orchestrate
 
-You prepare a run and launch it. From launch on, the orchestrator mod drives everything in code: worktrees, agents, the ladders, QA, merges, verification, the tracker. Nobody answers questions mid-run, so every ambiguity is settled here, with the person.
+You prepare a run and launch it. From launch on, the orchestrator mod drives everything: worktrees, agents, the ladders, QA, the merge agent that merges and verifies, the tracker. Nobody answers questions mid-run, so every ambiguity is settled here, with the person.
 
 ## 1. Read the whole plan
 
@@ -40,7 +40,7 @@ A sonnet-first slice may carry a brief too; it goes into every dev prompt.
 
 ## 4. Repos, base and branches
 
-- Each repo: `root` (the folder holding `.bare`, from `git rev-parse --git-common-dir`), `base` (the branch the run builds on; for stacked work the branch of the worktree the person is in, or the one they name), and the exact `build` and `test` commands. The mod runs them on the integration branch before anything merges and refuses to start on a red base.
+- Each repo: `root` (the folder holding `.bare`, from `git rev-parse --git-common-dir`), `base` (the branch the run builds on; for stacked work the branch of the worktree the person is in, or the one they name), and the exact `build` and `test` commands. The merge agent runs them on the integration branch before any slice starts, and a red base blocks the run until the person answers.
 - Branch names follow the repo's own rule first: a CI regex under `.github/workflows`, else `CONTRIBUTING.md`, `CLAUDE.md` or `docs/agents/branches.md`. Without one, the mod's shape applies: integration `<type>/<INITIALS>/<slug>`, slices `<type>/<INITIALS>/orchestration/<slug>/<id>-<slice-slug>`. If the repo's rule rejects that shape, set `integrationBranch` and each slice's `branch` to names it accepts. The integration branch must never sit under `orchestration/`.
 - If the integration branch already has a worktree the mod did not create, it stops and asks; settle that now.
 
@@ -74,7 +74,7 @@ A plain plan uses `"source": { "kind": "plain", "text": "<the plan>" }`, short i
 ## During the run
 
 - The pane (`/orchestrator pane`) and the band above the prompt show progress. `orchestrator_status` gives you the same as text.
-- A merge conflict first goes to a resolve agent, which merges the integration branch into the slice keeping both sides' acceptance criteria; fresh QA then checks the slice and the slices it collided with. If the two slices' requirements contradict, it stops and that becomes a blocker.
+- A merge conflict, or a slice that turns the suite red once merged, first goes to a resolve agent, which merges the integration branch into the slice keeping both sides' acceptance criteria; fresh QA then checks the slice and the slices it collided with. If the two slices' requirements contradict, it stops and that becomes a blocker.
 - A blocker arrives as a message while the rest of the run continues. Ask the person, then hand the answer back: `/orchestrator retry <slice | final:<repo> | integration:<repo>> <answer>`. The slice resumes on the rung it stopped on, with the answer in its prompt.
 - An answer guides how a slice is done; it never overrides acceptance criteria. A requirements conflict between two slices is settled only by `/orchestrator drop <slice>`, which takes that slice out of the run; whatever depends on it stays halted until it is dropped or retried too.
 - `/orchestrator abort` stops new work; `/orchestrator take` moves a run to this session.

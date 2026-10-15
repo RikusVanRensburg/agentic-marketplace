@@ -5,10 +5,10 @@ import type { Activity, SliceRow } from '../types'
 
 import type { Config, Rung } from './config'
 import { configOf, rungLabel } from './config'
-import type { Blocker, Effect, EndReason, Event, Report, RunState, Usage } from './engine'
-import { inFlight, start, step, totals } from './engine'
-import type { Run, Shell } from './git'
-import { checkedOutAt, cleanForQa, createSlice, devState, integrate, isLayoutPath, removeSlice, resetSlice, tail } from './git'
+import type { Blocker, Effect, EndReason, Event, MergeOutcome, Report, Role, RunState, Usage } from './engine'
+import { atOf, inFlight, start, step, totals } from './engine'
+import type { Run } from './git'
+import { checkMerge, checkedOutAt, createSlice, devState, headOf, isLayoutPath, removeSlice } from './git'
 import { denyOf } from './guards'
 import type { Closed, Plan } from './plan'
 import { overlapProblems, reconcileProblems, validatePlan } from './plan'
@@ -53,7 +53,13 @@ const agentRef = (agentId: string | undefined) => (agentId && current ? Object.v
 const worktreeOf = (state: RunState, slice: string | undefined, repo: string) =>
   (slice ? state.slices[slice]?.worktree : state.integration[repo]?.path) ?? ''
 
-const isWindowsPath = (path: string) => /^[a-zA-Z]:/.test(path)
+// The commits an agent may hard-reset to beyond HEAD: the merge agent's batch start, a fresh
+// dev's slice base. Nobody else rewrites history.
+function resetsOf(state: RunState, ref: { role: Role; repo: string; slice?: string }): string[] {
+  if (ref.role === 'merge') return [state.integration[ref.repo]?.before ?? ''].filter(Boolean)
+  const slice = ref.slice ? state.slices[ref.slice] : undefined
+  return ref.role === 'dev' && slice?.isFresh && slice.baseSha ? [slice.baseSha] : []
+}
 
 const str = (value: unknown) => (typeof value === 'string' ? value : '')
 
@@ -88,21 +94,6 @@ function runner($: EngineInterface): Run {
   return (argv, opts) => $.process.run([...argv], { timeoutMs: 120_000, ...opts })
 }
 
-// The repo's build and test lines, run through the platform shell with no time cap.
-function shell($: EngineInterface): Shell {
-  return async (command, cwd) => {
-    const argv = isWindowsPath(cwd) ? ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', command] : ['sh', '-c', command]
-    const child = $.process.spawn({ argv, cwd })
-    const iterator = child[Symbol.asyncIterator]()
-    let out = ''
-    for (;;) {
-      const next = await iterator.next()
-      if (next.done) return { exitCode: next.value.code ?? 1, tail: tail(out) }
-      out = (out + next.value.text).slice(-8000)
-    }
-  }
-}
-
 async function configNow($: EngineInterface): Promise<Config | null> {
   const result = configOf(options)
   if (!result.isValid) {
@@ -112,12 +103,13 @@ async function configNow($: EngineInterface): Promise<Config | null> {
   return result.config
 }
 
-function rungsOf(config: Config): { role: 'dev' | 'qa' | 'final-qa' | 'remediate' | 'resolve'; rung: Rung }[] {
+function rungsOf(config: Config): { role: Role; rung: Rung }[] {
   const devRungs = [...config.ladders['sonnet-first'], ...config.ladders['haiku-first']]
   return [
     ...devRungs.map(rung => ({ role: 'dev' as const, rung })),
     ...devRungs.map(rung => ({ role: 'resolve' as const, rung })),
     ...config.remediation.map(rung => ({ role: 'remediate' as const, rung })),
+    ...config.merge.map(rung => ({ role: 'merge' as const, rung })),
     { role: 'qa' as const, rung: config.qa },
     { role: 'final-qa' as const, rung: config.finalQa },
   ]
@@ -221,12 +213,17 @@ async function flushSpawns($: EngineInterface): Promise<void> {
 }
 
 // Spawns drain only inside a live hook. With no surface drawing and no agent running, nothing
-// may fire: after a while the person hears why the run is waiting, instead of a silent stall.
+// may fire: after a while the mod wakes the session with a message, whose turn end lets the
+// spawns go, and the person hears why, instead of a silent stall.
 function noticeWaiting($: EngineInterface): void {
   if (!queuedSince || isWaitShown || Date.now() - queuedSince < WAIT_MS) return
   isWaitShown = true
-  $.ui.toast(`orchestrator: ${pendingSpawns.length} agent${pendingSpawns.length === 1 ? '' : 's'} waiting to start; open the pane or type /orchestrator to let them go`)
+  const waiting = `${pendingSpawns.length} agent${pendingSpawns.length === 1 ? '' : 's'}`
+  $.ui.toast(`orchestrator: ${waiting} waiting to start; waking the session to let them go`)
   $.ui.status('orch waiting: open the pane (/orchestrator pane)')
+  void $.prompt.submit({
+    text: `[orchestrator] ${waiting} of run ${current?.id ?? ''} were waiting to start, because nothing of the mod was running to start them. They start when this turn ends. No action needed; if they still wait, open the pane with /orchestrator pane.`,
+  })
 }
 
 async function save($: EngineInterface, state: RunState): Promise<boolean> {
@@ -258,7 +255,7 @@ async function redraw($: EngineInterface): Promise<void> {
 }
 
 // Effects run outside the dispatch that produced them, one batch in order: a batch's effects
-// depend on each other (clean before QA, reset before dev), while batches run side by side.
+// depend on each other (a merge's cleanup before its issue closes), while batches run side by side.
 function perform($: EngineInterface, effects: Effect[]): void {
   if (!effects.length) return
   $.clock.after(0, () => {
@@ -274,19 +271,40 @@ function perform($: EngineInterface, effects: Effect[]): void {
           await carryOut($, effect)
         } catch (err) {
           $.ui.log(`orchestrator: ${effect.kind} failed: ${String(err)}`, { to: 'debug' })
-          failed($, effect, String(err))
+          try {
+            failed($, effect, String(err))
+          } catch (again) {
+            $.ui.toast(`orchestrator: ${effect.kind} failed and could not be reported: ${String(again)}`)
+          }
         }
       }
     })()
   })
 }
 
+// An effect that threw becomes the event its failure means, so the run decides on it like any
+// other outcome. The ones the run does not wait on reach the person as a toast.
 function failed($: EngineInterface, effect: Effect, reason: string): void {
-  if (effect.kind === 'create-integration') enqueue($, { kind: 'integration-failed', repo: effect.repo, reason })
-  else if (effect.kind === 'create-slice') enqueue($, { kind: 'slice-failed', slice: effect.slice, reason })
-  else if (effect.kind === 'spawn') enqueue($, { kind: 'spawn-failed', key: effect.key, reason })
-  else if (effect.kind === 'integrate') enqueue($, { kind: 'integrated', slice: effect.slice, isMerged: false, failure: reason })
-  else if (effect.kind === 'check-dev') enqueue($, { kind: 'dev-checked', slice: effect.slice, isClean: false, isAdvanced: false })
+  switch (effect.kind) {
+    case 'create-integration':
+      return enqueue($, { kind: 'integration-failed', repo: effect.repo, reason })
+    case 'create-slice':
+      return enqueue($, { kind: 'slice-failed', slice: effect.slice, reason })
+    case 'spawn':
+      return enqueue($, { kind: 'spawn-failed', key: effect.key, reason })
+    case 'check-dev':
+      return enqueue($, { kind: 'dev-checked', slice: effect.slice, isClean: false, isAdvanced: false })
+    case 'read-head':
+      return enqueue($, { kind: 'head-failed', repo: effect.repo, reason: `cannot read the integration HEAD: ${reason}` })
+    case 'check-merge':
+      return enqueue($, { kind: 'merge-checked', repo: effect.repo, problem: `the check itself failed: ${reason}`, commits: {} })
+    case 'remove-slice':
+    case 'close-issue':
+    case 'blocker':
+    case 'log':
+    case 'finished':
+      return $.ui.toast(`orchestrator: ${effect.kind} failed: ${reason}`)
+  }
 }
 
 async function carryOut($: EngineInterface, effect: Effect): Promise<void> {
@@ -309,12 +327,6 @@ async function carryOut($: EngineInterface, effect: Effect): Promise<void> {
       return enqueue($, { kind: 'slice-ready', slice: slice.id, path: made.path, baseSha: made.baseSha })
     }
 
-    case 'reset-slice': {
-      const slice = state.slices[effect.slice]
-      if (slice?.worktree && slice.baseSha) await resetSlice(run, slice.worktree, slice.baseSha)
-      return
-    }
-
     case 'check-dev': {
       const slice = state.slices[effect.slice]
       if (!slice?.worktree || !slice.baseSha) return enqueue($, { kind: 'dev-checked', slice: effect.slice, isClean: false, isAdvanced: false })
@@ -322,24 +334,26 @@ async function carryOut($: EngineInterface, effect: Effect): Promise<void> {
       return enqueue($, { kind: 'dev-checked', slice: slice.id, ...checked })
     }
 
-    case 'clean-for-qa': {
-      const slice = state.slices[effect.slice]
-      if (slice?.worktree) await cleanForQa(run, slice.worktree, state.config.qaCleanKeep)
-      return
-    }
-
     case 'spawn':
       return spawnAgent($, state, effect)
 
-    case 'integrate': {
-      const slice = state.slices[effect.slice]
-      const plan = state.plan.slices.find(s => s.id === effect.slice)
-      const integration = slice ? state.integration[slice.repo] : undefined
-      const repo = slice ? state.plan.repos[slice.repo] : undefined
-      if (!slice || !plan || !integration?.path || !repo) return
-      const message = `Merge ${slice.branch} (${slice.id} ${plan.title})`
-      const merge = await integrate(run, shell($), integration.path, slice.branch, message, repo.commands)
-      return enqueue($, { kind: 'integrated', slice: slice.id, ...merge })
+    case 'read-head': {
+      const path = state.integration[effect.repo]?.path
+      if (!path) return enqueue($, { kind: 'head-failed', repo: effect.repo, reason: 'no integration worktree recorded' })
+      // The merge agent resets to this HEAD, so uncommitted work there is the person's to settle.
+      const dirty = await run(['git', 'status', '--porcelain', '--untracked-files=no'], { cwd: path })
+      if (dirty.exitCode !== 0 || dirty.stdout.trim()) {
+        return enqueue($, { kind: 'head-failed', repo: effect.repo, reason: `the integration worktree ${path} has uncommitted changes; commit or discard them, then retry: ${dirty.stdout.trim().split(/\r?\n/).slice(0, 5).join(', ')}` })
+      }
+      const head = await headOf(run, path)
+      return enqueue($, head ? { kind: 'head-read', repo: effect.repo, head } : { kind: 'head-failed', repo: effect.repo, reason: `cannot read HEAD in ${path}` })
+    }
+
+    case 'check-merge': {
+      const path = state.integration[effect.repo]?.path
+      if (!path) return enqueue($, { kind: 'merge-checked', repo: effect.repo, problem: 'no integration worktree recorded', commits: {} })
+      const checked = await checkMerge(run, path, effect.before, effect.merged, effect.unmerged)
+      return enqueue($, { kind: 'merge-checked', repo: effect.repo, ...checked })
     }
 
     case 'remove-slice': {
@@ -385,8 +399,7 @@ async function isOwned($: EngineInterface, path: string): Promise<boolean> {
 }
 
 // The integration branch comes from the worktree-lifecycle mod, so it gets that mod's ship,
-// merge notice and housekeeping. It must be green before anything merges into it, so a red
-// verify later is the merge's fault.
+// merge notice and housekeeping. Its baseline build and suite are the merge agent's, next.
 async function createIntegration($: EngineInterface, state: RunState, repoName: string): Promise<void> {
   const repo = state.plan.repos[repoName]
   const integration = state.integration[repoName]
@@ -418,13 +431,6 @@ async function createIntegration($: EngineInterface, state: RunState, repoName: 
     }
     path = made.path
     await own($, { run: state.id, repo: repoName, branch: integration.branch, path, kind: 'integration' })
-  }
-
-  for (const [label, command] of [['build', repo.commands.build], ['test', repo.commands.test]] as const) {
-    const result = await shell($)(command, path)
-    if (result.exitCode !== 0) {
-      return enqueue($, { kind: 'integration-failed', repo: repoName, reason: `${integration.branch} is red before any merge: ${label} exited ${result.exitCode}: ${result.tail}` })
-    }
   }
 
   enqueue($, { kind: 'integration-ready', repo: repoName, path })
@@ -472,7 +478,22 @@ function reportBase(kind: string, input: Record<string, unknown>): Report | stri
   }
   if (kind === 'final-qa') return typeof input.pass === 'boolean' ? { kind, pass: input.pass, findings: list(input.findings) } : 'final-qa needs pass'
   if (kind === 'remediate') return { kind, committed: input.committed === true, summary: str(input.summary) }
-  if (kind === 'resolve') return { kind, resolved: input.resolved === true, summary: str(input.summary), conflict: str(input.conflict) }
+  if (kind === 'resolve') return { kind, resolved: input.resolved === true, summary: str(input.summary), conflict: str(input.conflict), notReproduced: input.notReproduced === true }
+  if (kind === 'merge') {
+    if (typeof input.baseRed !== 'boolean' && !str(input.cannotRun)) return 'merge needs baseRed'
+    const OUTCOMES: readonly string[] = ['merged', 'conflict', 'red', 'not-tried']
+    const rows = Array.isArray(input.slices) ? input.slices.filter((s): s is Record<string, unknown> => !!s && typeof s === 'object') : []
+    const bad = rows.find(s => !str(s.slice) || !OUTCOMES.includes(str(s.outcome)))
+    if (bad) return `each slice needs slice and an outcome of ${OUTCOMES.join(', ')}`
+    return {
+      kind,
+      baseRed: input.baseRed === true,
+      failing: list(input.failing),
+      slices: rows.map(s => ({ slice: str(s.slice), outcome: str(s.outcome) as MergeOutcome, conflicts: list(s.conflicts), failing: list(s.failing) })),
+      flaky: list(input.flaky),
+      summary: str(input.summary),
+    }
+  }
   return `unknown kind "${kind}"`
 }
 
@@ -512,7 +533,7 @@ async function announce($: EngineInterface, state: RunState, blocker: Blocker): 
   }
   void $.prompt.submit({
     text: [
-      `[orchestrator] ${blocker.at} is blocked and its chain has stopped${Object.keys(state.agents).length || state.queue.length || state.integrating ? `; the rest of run ${state.id} keeps going` : ''}.`,
+      `[orchestrator] ${blocker.at} is blocked and its chain has stopped${Object.keys(state.agents).length || state.queue.length || Object.values(state.integration).some(i => i.merging) ? `; the rest of run ${state.id} keeps going` : ''}.`,
       blockerText(state, blocker),
       blocker.reason.startsWith('requirements conflict')
         ? `Ask me which slice wins. Settle it with /orchestrator drop ${blocker.at} (or drop the merged slice it contradicts and retry this one); an answer cannot override acceptance criteria.`
@@ -586,6 +607,10 @@ function statusText(state: RunState): string {
       if (!s) return ''
       const last = s.rounds.at(-1)
       return `- ${id} ${s.phase} (${s.mode}, round ${s.round}${last ? `, last ${last.role} ${rungLabel(last.rung)} ${last.verdict ?? 'running'}` : ''})${s.blocker ? `: ${s.blocker}` : ''}`
+    }),
+    ...Object.entries(state.integration).map(([repo, i]) => {
+      const merging = i.merging === null ? 'idle' : i.merging.length ? `merging ${i.merging.join(', ')} (${i.step ?? ''}, round ${i.round})` : `baseline check (${i.step ?? ''}, round ${i.round})`
+      return `- integration ${repo} ${i.branch}: ${i.isReady ? 'ready' : 'not ready'}, ${merging}${i.flaky.length ? `; flaky: ${i.flaky.join('; ')}` : ''}`
     }),
     ...Object.values(state.finals).map(f => `- final QA ${f.repo}: ${f.phase}${f.findings.length ? `, ${f.findings.length} findings` : ''}`),
     ...state.blockers.map(b => `BLOCKER ${b.at}: ${b.reason}${b.worktree ? ` (worktree ${b.worktree})` : ''}`),
@@ -738,10 +763,27 @@ export const register: Register = (on, opts) => {
       inputSchema: {
         type: 'object',
         properties: {
-          kind: { type: 'string', enum: ['dev', 'qa', 'final-qa', 'remediate', 'resolve'] },
+          kind: { type: 'string', enum: ['dev', 'qa', 'final-qa', 'remediate', 'resolve', 'merge'] },
           committed: { type: 'boolean' },
           resolved: { type: 'boolean' },
           conflict: { type: 'string' },
+          notReproduced: { type: 'boolean' },
+          baseRed: { type: 'boolean' },
+          failing: { type: 'array', items: { type: 'string' } },
+          flaky: { type: 'array', items: { type: 'string' } },
+          slices: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                slice: { type: 'string' },
+                outcome: { type: 'string', enum: ['merged', 'conflict', 'red', 'not-tried'] },
+                conflicts: { type: 'array', items: { type: 'string' } },
+                failing: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['slice', 'outcome'],
+            },
+          },
           pass: { type: 'boolean' },
           summary: { type: 'string' },
           newApis: { type: 'string' },
@@ -796,10 +838,10 @@ export const register: Register = (on, opts) => {
     const ref = agentRef(e.agentId)
     if (!ref || !current) return next(e)
     const worktree = worktreeOf(current, ref.slice, ref.repo)
-    const why = denyOf(e.tool, e as unknown as Record<string, unknown>, worktree)
+    const why = denyOf(e.tool, e as unknown as Record<string, unknown>, worktree, resetsOf(current, ref))
     if (why) return { deny: `orchestrator: ${why}` }
     await flushSpawns($)
-    await record($, ref.slice ?? `final:${ref.repo}`, ref.agentId ?? '', taskNameOf(ref), `${e.tool} ${summaryOf(e as unknown as Record<string, unknown>, worktree)}`)
+    await record($, atOf(ref), ref.agentId ?? '', taskNameOf(ref), `${e.tool} ${summaryOf(e as unknown as Record<string, unknown>, worktree)}`)
     return next(e)
   }).catch(($, e, next) => {
     if (e.tool === 'SubagentHandback' && e.agentId && ownAgents.has(e.agentId)) return { result: HANDBACK_DONE }
@@ -807,7 +849,7 @@ export const register: Register = (on, opts) => {
     if (!ref || !current) return next(e)
     if (next.error.kind === 're-entry') {
       // Reached as a re-entry: run the guard's own check from the event alone.
-      const why = denyOf(e.tool, e as unknown as Record<string, unknown>, worktreeOf(current, ref.slice, ref.repo))
+      const why = denyOf(e.tool, e as unknown as Record<string, unknown>, worktreeOf(current, ref.slice, ref.repo), resetsOf(current, ref))
       return why ? { deny: `orchestrator: ${why}` } : next(e)
     }
     return next.called ? next(e) : { deny: 'orchestrator: its guard failed' }
