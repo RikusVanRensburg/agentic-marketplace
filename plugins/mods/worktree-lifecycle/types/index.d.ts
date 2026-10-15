@@ -1,4 +1,4 @@
-// The `$.worktree` noun other mods call, and the values the confirmation band draws.
+// The `$.worktree` noun other mods call, and the working branch the session keeps.
 //
 // Every method answers an outcome rather than throwing: `isDone` with the value, or
 // `isDone: false` with the reason in words a person can act on.
@@ -46,9 +46,6 @@ export type WorktreeCleanArgs = { branch: string; cwd?: string }
 
 export type WorktreeRepoArgs = { cwd?: string }
 
-// One action waiting on the person's press in the band above the prompt.
-export type WorktreePrepared = { id: string; title: string }
-
 export type WorktreePr = {
   branch: string
   number: number
@@ -88,16 +85,8 @@ export type WorktreeCleanPlan = {
   hasRemoteRef: boolean
 }
 
-export type WorktreePending = {
-  id: string
-  title: string
-  lines: string[]
-  confirm: string
-  plan: WorktreeShipPlan | WorktreeCleanPlan
-}
-
-// The branch the session works on: what the band shows and the model is told, and where the
-// lifecycle steps act when nobody names a repo or a base. The session's own folder never moves.
+// The branch the session works on: what the model is told, and where the lifecycle steps act
+// when nobody names a repo or a base. The session's own folder never moves.
 export type WorktreeWorking = {
   root: string
   branch: string
@@ -107,7 +96,7 @@ export type WorktreeWorking = {
   base: string | null
 }
 
-// One branch the pickers offer: those with a worktree first, then local branches.
+// One branch of the working repo: those with a worktree first, then local branches.
 export type WorktreeChoice = { branch: string; path: string | null; base: string | null }
 
 export type WorktreeScope = {
@@ -115,21 +104,18 @@ export type WorktreeScope = {
   org: string | null
   // The repo roots under `org`.
   repos: string[]
-  // The repo the picker or the working branch is in.
+  // The repo the working branch is in, or the session's repo while there is none.
   root: string | null
   branches: WorktreeChoice[]
   working: WorktreeWorking | null
-  isPicking: boolean
-  // Why the last pick did not take, shown in the picker.
-  note: string | null
 }
 
 export type Worktree = {
   create: (args: WorktreeCreateArgs) => Promise<WorktreeOutcome<WorktreeCreated>>
-  // Ship, clean and sweep only prepare: the band asks the person, and their press runs it.
-  ship: (args: WorktreeShipArgs) => Promise<WorktreeOutcome<WorktreePrepared>>
-  clean: (args: WorktreeCleanArgs) => Promise<WorktreeOutcome<WorktreePrepared>>
-  sweep: (args: WorktreeRepoArgs) => Promise<WorktreeOutcome<{ prepared: WorktreePrepared[] }>>
+  // Ship, clean and sweep run at once: the caller has the person's yes.
+  ship: (args: WorktreeShipArgs) => Promise<WorktreeOutcome<{ text: string; url: string | null }>>
+  clean: (args: WorktreeCleanArgs) => Promise<WorktreeOutcome<{ text: string }>>
+  sweep: (args: WorktreeRepoArgs) => Promise<WorktreeOutcome<{ cleaned: string[]; skipped: string[] }>>
   check: (args: WorktreeRepoArgs) => Promise<WorktreeOutcome<{ prs: WorktreePr[] }>>
   list: (args: WorktreeRepoArgs) => Promise<WorktreeOutcome<{ entries: WorktreeEntry[] }>>
   merged: (args: WorktreeMerged) => Promise<void>
@@ -141,6 +127,6 @@ declare module 'claude-code' {
   }
 
   interface PluginState {
-    'worktree-lifecycle': { pending: WorktreePending[]; busy: string | null; scope: WorktreeScope | null }
+    'worktree-lifecycle': { scope: WorktreeScope | null }
   }
 }

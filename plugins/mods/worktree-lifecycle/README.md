@@ -21,36 +21,30 @@ It knows nothing about orchestration. Another mod can call it through `$.worktre
 | `/wt new <branch> [--base <branch>]` | The same with a whole branch name |
 | `/wt ship [<branch>] [--base <b>] [--title <t>] [--ready]` | Pushes and opens a draft PR (`--ready` for a normal one) |
 | `/wt clean <branch>` | Fast-forwards the base, removes the worktree and the empty folders above it, `branch -d`, deletes `origin/<branch>` |
-| `/wt sweep` | Offers housekeeping for every merged branch the mod created |
+| `/wt sweep` | Housekeeps every merged branch the mod created |
 | `/wt check` | Asks GitHub now whether those PRs merged |
 | `/wt status` | The branches the mod created in this repo |
 
-Typing `/wt ship` or `/wt clean` yourself is the yes. The model's tools (`worktree_new`,
-`worktree_ship`, `worktree_clean`, `worktree_sweep`, `worktree_check`, `worktree_status`) and other
-mods only prepare a ship or a clean: it waits in a band above the prompt until you press the button.
+Every ship, clean and sweep runs at once, however it is asked for: a `/wt` command, the model's
+tools (`worktree_new`, `worktree_ship`, `worktree_clean`, `worktree_sweep`, `worktree_check`,
+`worktree_status`), or another mod through `$.worktree`. The yes is given before the call: typing
+the command, telling the model, or the permission prompt for its tool call.
 
 ## Working branch
 
-The band above the prompt shows which repo and branch the session works on, on one row that reads
-`org › repo › branch`, with a picker in place of each part not chosen yet. The session's own
-folder never moves: other repos and worktrees stay open, and this only says where the work goes by
-default.
+The working branch is where the work goes by default. Opened inside a worktree, that worktree is
+the working branch. Opened on a repo root or an org folder (one holding bare repos), there is none
+until a worktree is created. The session's own folder never moves: other repos and worktrees stay
+open.
 
-- Opened on an org folder (one holding bare repos), the band asks for a repo, then a branch.
-- Opened on a repo root, it asks for a branch. Branches with a worktree come first, then local
-  branches; any branch on origin can be typed in.
-- Opened inside a worktree, that worktree is the working branch and nothing is asked.
+A worktree created in the working repo, or in one of the org folder's repos (`/wt new`,
+`worktree_new`, `$.worktree.create`), is cut from the working branch and becomes it. Housekeeping
+the working branch hands over to its base.
 
-Once picked, the branch is a dropdown of the repo's worktrees, `Other branch...` and, from an org
-folder, `Other repo...`, followed by the base it was cut from and the repo's worktree count. A worktree created in the working repo (`/wt new`, `worktree_new`,
-`$.worktree.create`) is cut from the working branch and becomes it. Housekeeping the working branch
-hands over to its base.
+The model reads the working branch in the system prompt. Every `/wt` command and `worktree_*` tool
+acts on it when not given a folder; another mod that passes `cwd` is not affected.
 
-The model reads the working branch in the system prompt, and is told in the transcript when you
-change it. Every `/wt` command and `worktree_*` tool acts on it when not given a folder; another
-mod that passes `cwd` is not affected.
-
-The pick is kept in the session's state, so it survives a mod reload. It is not written to disk:
+The working branch is kept in the session's state, so it survives a mod reload. It is not written to disk:
 a new session starts from its folder again.
 
 ## Branch names
@@ -66,7 +60,7 @@ and refuses a name that would clash with an existing one (`a/b` beside `a/b/c`).
 
 There is no polling. A merge is noticed from the GitHub events the session receives, which arrive
 when the desktop app is watching the PR, or when you run `/wt check` or `/wt sweep`. The first
-session to see it tells you and offers housekeeping; it never housekeeps on its own.
+session to see it tells you and names the `/wt clean` to run; it never housekeeps on its own.
 
 ## Guards
 

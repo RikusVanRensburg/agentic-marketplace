@@ -3,20 +3,11 @@ import { expect, test, type Engine } from 'claude-code/testing'
 
 import { afterClean } from '../hooks/working'
 
-// The working branch: picked in the band from the org folder or a repo root, or taken from the
-// worktree the session opened in; followed by creates and housekeeping, and told to the model.
-// Git answers from a script that knows two repos under D:/org; every command run is recorded.
+// The working branch: taken from the worktree the session opened in, followed by creates and
+// housekeeping, and told to the model. Git answers from a script that knows two repos under
+// D:/org; every command run is recorded.
 
-const SITE = { plugin: 'worktree-lifecycle', viewport: { columns: 100, rows: 30 } } as const
 const STOCK: RenderElement = { type: 'Text', props: {}, children: [''] }
-
-const band = {
-  ...SITE,
-  surface: 'desktop',
-  component: 'AbovePrompt',
-  requestId: 'band',
-  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 100, scroll: { offset: 0, bodyRows: 10 }, view: {} },
-} as const
 
 type World = { cwd: string; trees: Record<string, string[]>; local: Record<string, string[]>; remote: Record<string, string[]>; ran: string[]; appended: string[] }
 
@@ -98,133 +89,48 @@ async function start($: Engine) {
   await $.command.run({ command: 'wt', args: 'status', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
 }
 
-const options = (found: { props: Record<string, unknown> } | undefined) =>
-  ((found?.props.options ?? []) as { value: string; label?: string }[]).map(one => one.label ?? one.value)
+const compose = ($: Engine) =>
+  $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: [], tools: [], outputStyle: null, traits: [] })
 
-for (const surface of ['terminal', 'desktop'] as const) {
-  test(`${surface}: from the org folder, pick a repo then a branch, and the band folds to one dropdown`, async ($, on) => {
-    const w = world('D:/org')
-    stub(on, w)
-    await start($)
-    const ui = await $.ui.mount({ ...band, surface })
+const workingSection = async ($: Engine) => (await compose($)).sections.find(one => one.id === 'worktree-lifecycle:working')
 
-    expect(options(await ui.find({ type: 'Select', key: 'repo' }))).toEqual(['Choose repo', 'alpha', 'beta'])
-    expect(await ui.find({ type: 'Select', key: 'branch' })).toBeUndefined()
-
-    await ui.select({ key: 'repo', value: 'D:/org/alpha' })
-    expect(options(await ui.find({ type: 'Select', key: 'branch' }))).toEqual(['Choose branch', 'main', 'release, no worktree'])
-
-    await ui.select({ key: 'branch', value: 'main' })
-    const working = await ui.find({ type: 'Select', key: 'working' })
-
-    expect(working?.props.value).toBe('main')
-    expect(options(working)).toEqual(['main', 'Other branch...', 'Other repo...'])
-    expect(await ui.find({ type: 'Text', text: 'org' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'alpha' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '1 worktree' })).toBeDefined()
-    expect(await ui.find({ type: 'Select', key: 'branch' })).toBeUndefined()
-    expect(w.appended).toEqual(['[worktree-lifecycle] The person set the working environment: alpha on main, worktree D:/org/alpha/main.'])
-  })
-}
-
-for (const surface of ['terminal', 'desktop'] as const) {
-  test(`${surface}: the band is one row, with the mark and chevrons drawn for the surface`, async ($, on) => {
-    const w = world('D:/org')
-    stub(on, w)
-    await start($)
-    const ui = await $.ui.mount({ ...band, surface })
-
-    const rows = async () => {
-      type Node = { props: Record<string, unknown>; children?: unknown[] }
-      const drawn = (await ui.drawn()) as unknown as Node
-      const isColumn = (child: unknown) => typeof child === 'object' && child !== null && 'props' in child && (child as Node).props.flexDirection === 'column'
-      return [drawn.props.flexDirection, (drawn.children ?? []).some(isColumn)]
-    }
-
-    expect(await rows()).toEqual(['row', false])
-    await ui.select({ key: 'repo', value: 'D:/org/alpha' })
-    expect(await rows()).toEqual(['row', false])
-    await ui.select({ key: 'branch', value: 'main' })
-    expect(await rows()).toEqual(['row', false])
-
-    const svgs = await ui.findAll({ type: 'Svg' })
-    expect(svgs.length).toBe(surface === 'desktop' ? 3 : 0)
-    expect(await ui.find({ type: 'Text', text: '›' })).toEqual(surface === 'desktop' ? undefined : expect.anything())
-  })
-}
-
-test('the model is told the working branch in the system prompt', async ($, on) => {
+test('opened inside a worktree, the model is told that worktree is the working branch', async ($, on) => {
   const w = world('D:/org/beta/dev')
   stub(on, w)
   on('prompt.compose', () => ({ sections: [] }))
   await start($)
 
-  const composed = await $.prompt.compose({ model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: [], tools: [], outputStyle: null, traits: [] })
-  const section = composed.sections.find(one => one.id === 'worktree-lifecycle:working')
+  const section = await workingSection($)
 
   expect(section?.scope).toBe('session')
   expect(section?.text).toMatch(/Make changes in D:\/org\/beta\/dev \(branch dev\), by path\./)
 })
 
-test('opened inside a worktree, that worktree is the working branch and no picker shows', async ($, on) => {
-  const w = world('D:/org/beta/dev')
+test('opened on an org folder, there is no working branch to tell', async ($, on) => {
+  const w = world('D:/org')
   stub(on, w)
+  on('prompt.compose', () => ({ sections: [] }))
   await start($)
-  const ui = await $.ui.mount(band)
 
-  const working = await ui.find({ type: 'Select', key: 'working' })
-  expect(working?.props.value).toBe('dev')
-  expect(options(working)).toEqual(['dev', 'Other branch...'])
-  expect(await ui.find({ type: 'Select', key: 'branch' })).toBeUndefined()
-  expect(w.appended).toEqual([])
+  expect(await workingSection($)).toBeUndefined()
 })
 
 test('a worktree created in the working repo is cut from the working branch and becomes it', async ($, on) => {
-  const w = world('D:/org')
+  const w = world('D:/org/alpha/main')
   stub(on, w)
+  on('prompt.compose', () => ({ sections: [] }))
   await start($)
-  const ui = await $.ui.mount(band)
-  await ui.select({ key: 'repo', value: 'D:/org/alpha' })
-  await ui.select({ key: 'branch', value: 'release' })
 
   const result = await $.tool.call({ tool: 'mcp__worktree-lifecycle__worktree_new' as never, type: 'feat', slug: 'x' } as never)
 
-  expect(JSON.stringify(result)).toMatch(/Created feat\/RVR\/x at D:\/org\/alpha\/feat\/RVR\/x, cut from release/)
-  expect(w.ran).toContain('git -C D:/org/alpha worktree add --no-track -b feat/RVR/x D:/org/alpha/feat/RVR/x release')
-
-  const working = await ui.find({ type: 'Select', key: 'working' })
-  expect(working?.props.value).toBe('feat/RVR/x')
-  expect(options(working)).toEqual(['main', 'feat/RVR/x', 'Other branch...', 'Other repo...'])
-})
-
-test('Other branch reopens the picker; Keep goes back, a typed origin branch is taken, an unknown one is said', async ($, on) => {
-  const w = world('D:/org/alpha')
-  stub(on, w)
-  await start($)
-  const ui = await $.ui.mount(band)
-
-  expect(await ui.find({ type: 'Select', key: 'repo' })).toBeUndefined()
-  await ui.select({ key: 'branch', value: 'main' })
-
-  await ui.select({ key: 'working', value: ':branch' })
-  expect(await ui.find({ type: 'Button', text: 'Keep main' })).toBeDefined()
-  await ui.press({ key: 'keep' })
-  expect((await ui.find({ type: 'Select', key: 'working' }))?.props.value).toBe('main')
-
-  await ui.select({ key: 'working', value: ':branch' })
-  await ui.input({ key: 'branch-name', text: 'nope' })
-  expect(await ui.find({ type: 'Text', text: 'There is no branch nope in alpha, locally or on origin.' })).toBeDefined()
-
-  await ui.input({ key: 'branch-name', text: 'old/spike' })
-  const working = await ui.find({ type: 'Select', key: 'working' })
-  expect(working?.props.value).toBe('old/spike')
-  expect(options(working)).toEqual(['old/spike, no worktree', 'main', 'Other branch...'])
-  expect(w.appended.at(-1)).toBe('[worktree-lifecycle] The person set the working environment: alpha on old/spike, which has no worktree yet.')
+  expect(JSON.stringify(result)).toMatch(/Created feat\/RVR\/x at D:\/org\/alpha\/feat\/RVR\/x, cut from main/)
+  expect(w.ran).toContain('git -C D:/org/alpha worktree add --no-track -b feat/RVR/x D:/org/alpha/feat/RVR/x main')
+  expect((await workingSection($))?.text).toMatch(/Make changes in D:\/org\/alpha\/feat\/RVR\/x \(branch feat\/RVR\/x, cut from main\)/)
 })
 
 test('housekeeping the working branch hands over to its base; any other branch changes nothing', () => {
   const working = { root: 'D:/org/alpha', branch: 'feat/RVR/x', path: 'D:/org/alpha/feat/RVR/x', base: 'main' }
-  const scope = { org: null, repos: [], root: 'D:/org/alpha', branches: [], working, isPicking: false, note: null }
+  const scope = { org: null, repos: [], root: 'D:/org/alpha', branches: [], working }
 
   expect(afterClean(scope, { branch: 'feat/RVR/x', base: 'main', baseWorktree: 'D:/org/alpha/main' }).working).toEqual({
     root: 'D:/org/alpha',
@@ -233,13 +139,4 @@ test('housekeeping the working branch hands over to its base; any other branch c
     base: null,
   })
   expect(afterClean(scope, { branch: 'fix/RVR/y', base: 'main', baseWorktree: null })).toBe(scope)
-})
-
-test('a folder holding no repos leaves the band to the engine', async ($, on) => {
-  const w = world('D:/elsewhere')
-  stub(on, w)
-  await start($)
-  const ui = await $.ui.mount(band)
-
-  expect(await ui.find({ type: 'Select' })).toBeUndefined()
 })

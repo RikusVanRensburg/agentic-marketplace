@@ -1,15 +1,15 @@
 import type { On, RenderElement } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-// Shipping through the model's tool: it only prepares, and the press in the band is what
-// pushes. Git and gh answer from a script; every command run is recorded.
+// Shipping runs at once, whoever asks: the person's yes is given before the call. Git and gh
+// answer from a script; every command run is recorded.
 
-const SITE = { plugin: 'worktree-lifecycle', viewport: { columns: 100, rows: 30 } } as const
 const STOCK: RenderElement = { type: 'Text', props: {}, children: [''] }
 const PORCELAIN = 'worktree D:/r/.bare\nbare\n\nworktree D:/r/main\nHEAD a\nbranch refs/heads/main\n\nworktree D:/r/feat/RVR/x\nHEAD b\nbranch refs/heads/feat/RVR/x\n'
 
 const band = {
-  ...SITE,
+  plugin: 'worktree-lifecycle',
+  viewport: { columns: 100, rows: 30 },
   surface: 'terminal',
   component: 'AbovePrompt',
   requestId: 'band',
@@ -41,50 +41,39 @@ function stub(on: On, ran: string[]) {
   })
 }
 
-test('the ship tool waits for the press, and the press pushes and opens a draft PR', async ($, on) => {
+test('the ship tool pushes and opens a draft PR at once', async ($, on) => {
   const ran: string[] = []
   stub(on, ran)
 
   const result = await $.tool.call({ tool: 'mcp__worktree-lifecycle__worktree_ship', branch: 'feat/RVR/x' })
-  expect(String(result.result)).toMatch(/Nothing is pushed until the person presses/)
-  expect(ran.some(line => / push /.test(line))).toBe(false)
 
-  const ui = await $.ui.mount(band)
-  expect(await ui.find({ type: 'Text', text: /Ship feat\/RVR\/x\?/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Draft PR into main: feat: add x/ })).toBeDefined()
-
-  await ui.press({ key: 'confirm' })
-
+  expect(String(result.result)).toMatch(/pull\/7/)
   expect(ran).toContain('git -C D:/r/feat/RVR/x push -u origin feat/RVR/x')
   expect(ran).toContain('git -C D:/r fetch --no-prune origin main')
   expect(ran.find(line => line.startsWith('gh pr create'))).toMatch(/--base main --head feat\/RVR\/x --title feat: add x --body-file - --draft/)
 })
 
-test('Later drops the offer and runs nothing', async ($, on) => {
+test('/wt ship run by another plugin ships too', async ($, on) => {
   const ran: string[] = []
   stub(on, ran)
 
-  await $.tool.call({ tool: 'mcp__worktree-lifecycle__worktree_ship', branch: 'feat/RVR/x', isReady: true })
-  const ui = await $.ui.mount(band)
-  expect(await ui.find({ type: 'Button', text: 'Push and open PR' })).toBeDefined()
-
-  await ui.press({ key: 'later' })
-
-  expect(ran.some(line => / push /.test(line))).toBe(false)
-  expect(await ui.find({ type: 'Button', key: 'confirm' })).toBeUndefined()
-})
-
-test('another plugin running /wt ship gets the band, not a push', async ($, on) => {
-  const ran: string[] = []
-  stub(on, ran)
-
-  const result = await $.command.run({
+  await $.command.run({
     command: 'wt',
-    args: 'ship feat/RVR/x',
+    args: 'ship feat/RVR/x --ready',
     origin: { kind: 'plugin', name: 'someone-else' },
     presentation: { isFullscreen: false, columns: 100 },
   })
 
-  expect(result.text).toMatch(/Waiting for the person's yes/)
-  expect(ran.some(line => / push /.test(line))).toBe(false)
+  expect(ran).toContain('git -C D:/r/feat/RVR/x push -u origin feat/RVR/x')
+  expect(ran.find(line => line.startsWith('gh pr create'))).not.toMatch(/--draft/)
+})
+
+test('nothing is drawn above the prompt', async ($, on) => {
+  stub(on, [])
+  await $.tool.call({ tool: 'mcp__worktree-lifecycle__worktree_status' })
+
+  const ui = await $.ui.mount(band)
+
+  expect(await ui.find({ type: 'Button' })).toBeUndefined()
+  expect(await ui.find({ type: 'Select' })).toBeUndefined()
 })

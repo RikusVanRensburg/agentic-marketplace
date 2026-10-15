@@ -565,7 +565,7 @@ async function finish($: EngineInterface, state: RunState): Promise<void> {
     text: [
       `[orchestrator] Run ${state.id} (${state.plan.title}) finished: ${t.merged} of ${t.slices} slices merged, ${t.blocked} blocked. ${finals}.`,
       `Integration branches: ${Object.entries(state.integration).map(([r, i]) => `${r} ${i.branch}`).join(', ')}. Nothing is pushed.`,
-      'Summarise the run for me from orchestrator_status. Pushing and the PR wait for my yes; on yes, prepare them with the worktree-lifecycle ship.',
+      'Summarise the run for me from orchestrator_status. Pushing and the PR wait for my yes; on yes, ship them with worktree_ship.',
     ].join('\n'),
   })
 }

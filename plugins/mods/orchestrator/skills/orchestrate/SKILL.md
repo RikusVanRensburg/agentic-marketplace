@@ -81,4 +81,4 @@ A plain plan uses `"source": { "kind": "plain", "text": "<the plan>" }`, short i
 
 ## After the run
 
-The run ends at a verified local integration branch, with issues closed as their slices merged. Nothing is pushed. Summarise from `orchestrator_status`. Push and PR only on the person's yes, and then through the worktree-lifecycle mod's ship, which waits for their press.
+The run ends at a verified local integration branch, with issues closed as their slices merged. Nothing is pushed. Summarise from `orchestrator_status`. Push and PR only on the person's yes, and then with the worktree-lifecycle mod's `worktree_ship`.
