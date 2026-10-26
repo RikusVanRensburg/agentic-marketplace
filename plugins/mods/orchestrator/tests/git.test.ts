@@ -1,76 +1,79 @@
 import { expect, test } from 'claude-code/testing'
 
-import { cleanTargets, failureLines, tail } from '../hooks/git'
+import type { Ran, Run } from '../hooks/git'
+import { checkMerge } from '../hooks/git'
 
-const KEEP = ['node_modules', 'packages']
+// A scripted repo: before h0, the merge agent merged s1 (tip t1) as m1, giving h1. Each case
+// changes one answer from what a clean batch gives.
+type Repo = {
+  head: string
+  ancestors: [string, string][]
+  dirty: string
+  stray: string
+  merges: string
+  redone: { exitCode: number; tree: string }
+}
 
-test('the QA clean removes build output but nothing inside a kept folder', () => {
-  const listing = [
-    'Would remove Timebase.Core/src/Timebase.Core.React.UI/node_modules/',
-    'Would remove Timebase.Lab/src/Timebase.Mqtt.Broker.UI/node_modules/',
-    'Would remove Timebase.Lab/src/Timebase.Mqtt.Broker/bin/',
-    'Would remove Timebase.Lab/src/Timebase.Mqtt.Broker/obj/',
-    'Would remove packages/cache.bin',
-    'Would remove node_modules/',
-    'Would remove dist/index.js',
-  ].join('\r\n')
+const CLEAN: Repo = {
+  head: 'h1',
+  ancestors: [['h0', 'h1'], ['t1', 'h1']],
+  dirty: '',
+  stray: '',
+  merges: 'm1 h0 t1\n',
+  redone: { exitCode: 0, tree: 'T1' },
+}
 
-  expect(cleanTargets(listing, KEEP)).toEqual([
-    'Timebase.Lab/src/Timebase.Mqtt.Broker/bin/',
-    'Timebase.Lab/src/Timebase.Mqtt.Broker/obj/',
-    'dist/index.js',
-  ])
+function git(repo: Partial<Repo> = {}) {
+  const r = { ...CLEAN, ...repo }
+  const calls: string[] = []
+  const ok = (stdout = ''): Ran => ({ exitCode: 0, stdout, stderr: '' })
+  const run: Run = async argv => {
+    const a = [...argv]
+    calls.push(a.join(' '))
+    if (a[1] === 'rev-parse' && a.includes('HEAD^{commit}')) return ok(`${r.head}\n`)
+    if (a[1] === 'rev-parse' && a.includes('refs/heads/s1^{commit}')) return ok('t1\n')
+    if (a[1] === 'rev-parse' && a.includes('refs/heads/s2^{commit}')) return ok('t2\n')
+    if (a[1] === 'rev-parse' && a[2] === 'm1^{tree}') return ok('T1\n')
+    if (a[1] === 'merge-base') return { exitCode: r.ancestors.some(([x, y]) => x === a[3] && y === a[4]) ? 0 : 1, stdout: '', stderr: '' }
+    if (a[1] === 'status') return ok(r.dirty)
+    if (a[1] === 'rev-list') return ok(r.stray)
+    if (a[1] === 'log') return ok(r.merges)
+    if (a[1] === 'merge-tree') return { exitCode: r.redone.exitCode, stdout: `${r.redone.tree}\n`, stderr: '' }
+    return { exitCode: 1, stdout: '', stderr: `unexpected ${a.join(' ')}` }
+  }
+  return { run, calls }
+}
+
+test('a batch of clean merges checks out and names each merge commit', async () => {
+  const g = git()
+  expect(await checkMerge(g.run, 'D:/r/i', 'h0', ['s1'], [])).toEqual({ problem: null, commits: { s1: 'm1' } })
+  expect(g.calls).toContain('git rev-list --no-merges h1 ^h0 ^t1')
+  expect(g.calls).toContain('git merge-tree --write-tree h0 t1')
 })
 
-test('a file reached through a kept folder is never a target, whatever ignore rule it matches', () => {
-  // What the old `-e !node_modules` clean listed: pnpm's junction to Core, walked into, so Core's
-  // tracked package-lock.json would have gone.
-  const listing = 'Would remove Timebase.Lab/src/Timebase.Lab.UI/node_modules/@timebase/react-ui/package-lock.json\n'
-
-  expect(cleanTargets(listing, KEEP)).toEqual([])
+test('a merge that is not what git makes by itself is refused: a resolved conflict or an edit', async () => {
+  for (const redone of [{ exitCode: 1, tree: 'T1' }, { exitCode: 0, tree: 'OTHER' }]) {
+    expect((await checkMerge(git({ redone }).run, 'D:/r/i', 'h0', ['s1'], [])).problem).toMatch(/not the merge git makes by itself/)
+  }
 })
 
-test('kept folder names match whole path parts, in any case, and quoted paths are unquoted', () => {
-  const listing = [
-    'Would remove Node_Modules/',
-    'Would remove my_node_modules_backup/',
-    'Would remove "a folder/out/"',
-    'Some other line',
-  ].join('\n')
-
-  expect(cleanTargets(listing, KEEP)).toEqual(['my_node_modules_backup/', 'a folder/out/'])
+test('a commit other than a merge on the integration branch is refused', async () => {
+  expect((await checkMerge(git({ stray: 'f00\n' }).run, 'D:/r/i', 'h0', ['s1'], [])).problem).toMatch(/commits other than merges landed: f00/)
 })
 
-test('a blocker names the failing tests even when they are far above the last lines', () => {
-  const output = [
-    'Passed!  - Failed:     0, Passed:    10, Total:    10 - Timebase.Lab.Configuration.Tests.dll',
-    'Failed!  - Failed:   157, Passed:   190, Total:   347 - Timebase.OpcUa.Server.Tests.dll',
-    ...Array.from({ length: 200 }, (_, i) => `noise line ${i} that the tail cuts off`),
-    'Passed!  - Failed:     0, Passed:   283, Total:   283 - Timebase.SparkplugB.Host.Tests.dll',
-  ].join('\n')
-
-  const text = tail(output, 200)
-
-  expect(text.startsWith('Failed!  - Failed:   157')).toBe(true)
-  expect(text).toContain('Timebase.SparkplugB.Host.Tests.dll')
-  expect(text).not.toContain('Timebase.Lab.Configuration.Tests.dll')
+test('the report has to match the branch: merged means in HEAD, not merged means out', async () => {
+  expect((await checkMerge(git({ ancestors: [['h0', 'h1']] }).run, 'D:/r/i', 'h0', ['s1'], [])).problem).toMatch(/s1 is reported merged but is not in HEAD/)
+  const both = git({ ancestors: [['h0', 'h1'], ['t1', 'h1'], ['t2', 'h1']] })
+  expect((await checkMerge(both.run, 'D:/r/i', 'h0', ['s1'], ['s2'])).problem).toMatch(/s2 is reported not merged but is in HEAD/)
 })
 
-test('failure lines are de-duplicated and capped', () => {
-  const output = [
-    '[xUnit.net 00:00:12.12]     Some.Test [FAIL]',
-    '[xUnit.net 00:00:12.12]     Some.Test [FAIL]',
-    'error CS0117: does not contain a definition',
-    ...Array.from({ length: 30 }, (_, i) => `[xUnit.net] Test${i} [FAIL]`),
-  ].join('\n')
-
-  const lines = failureLines(output)
-
-  expect(lines.length).toBe(20)
-  expect(lines[0]).toBe('[xUnit.net 00:00:12.12]     Some.Test [FAIL]')
-  expect(lines[1]).toBe('error CS0117: does not contain a definition')
+test('HEAD has to grow from the batch start, with a clean tree', async () => {
+  expect((await checkMerge(git({ ancestors: [['t1', 'h1']] }).run, 'D:/r/i', 'h0', ['s1'], [])).problem).toMatch(/does not grow from h0/)
+  expect((await checkMerge(git({ dirty: ' M src/a.cs\n' }).run, 'D:/r/i', 'h0', ['s1'], [])).problem).toMatch(/uncommitted changes: M src\/a.cs/)
+  expect((await checkMerge(git().run, 'D:/r/i', '', ['s1'], [])).problem).toMatch(/no HEAD was recorded/)
 })
 
-test('a clean run keeps the plain tail', () => {
-  expect(tail('Passed!  - Failed:     0, Passed:    10\nDone')).toBe('Passed!  - Failed:     0, Passed:    10\nDone')
+test('a baseline check with nothing merged checks out when HEAD did not move', async () => {
+  const g = git({ head: 'h0', ancestors: [], merges: '' })
+  expect(await checkMerge(g.run, 'D:/r/i', 'h0', [], [])).toEqual({ problem: null, commits: {} })
 })

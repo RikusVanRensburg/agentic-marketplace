@@ -2,13 +2,17 @@
 // the next state and the effects to carry out. Nothing here touches git, agents or the
 // tracker; register.tsx does, and feeds each outcome back in as an event. The state is what
 // `$.store` keeps, so a reload or a new session picks the run up where it stood.
+//
+// The mod orchestrates and checks; agents do every piece of work that can go wrong. Merging,
+// building and testing belong to the merge agent, and the mod only reads git to check its work.
+// Every outcome, an agent's report or its absence, comes back as an event the run decides on.
 
 import type { Config, Mode, Rung } from './config'
 import { rungLabel } from './config'
 import type { Closed, Plan } from './plan'
 import { integrationBranchOf, sliceBranchOf } from './plan'
 
-export type Role = 'dev' | 'qa' | 'final-qa' | 'remediate' | 'resolve'
+export type Role = 'dev' | 'qa' | 'final-qa' | 'remediate' | 'resolve' | 'merge'
 
 export type Phase =
   | 'waiting' // deps not merged yet
@@ -17,8 +21,8 @@ export type Phase =
   | 'checking' // dev reported a commit; the mod checks the tree
   | 'qa'
   | 'queued' // QA passed, waiting for integration
-  | 'integrating'
-  | 'resolving' // a merge conflicted; an agent merges the integration branch into the slice
+  | 'integrating' // in the merge agent's batch
+  | 'resolving' // its merge conflicted or went red; an agent merges the integration branch into the slice
   | 'merged'
   | 'landed' // closed as completed before this run
   | 'descoped' // closed otherwise before this run, nothing depends on it
@@ -49,11 +53,19 @@ export type QaReport = { kind: 'qa'; pass: boolean; defects: string[]; criteria?
 export type FinalReport = { kind: 'final-qa'; pass: boolean; findings: string[] }
 export type FixReport = { kind: 'remediate'; committed: boolean; summary: string }
 // resolved: the conflict is resolved and committed; otherwise `conflict` says why the two
-// slices' requirements cannot both hold.
-export type ResolveReport = { kind: 'resolve'; resolved: boolean; summary: string; conflict?: string }
+// slices' requirements cannot both hold. notReproduced: the merged suite went red, but not on
+// the slice branch with the integration branch merged in.
+export type ResolveReport = { kind: 'resolve'; resolved: boolean; summary: string; conflict?: string; notReproduced?: boolean }
+// How one slice of a merge batch ended. red: the build or suite failed twice with it merged
+// and passed without it; failing names what failed.
+export type MergeOutcome = 'merged' | 'conflict' | 'red' | 'not-tried'
+export type SliceMerge = { slice: string; outcome: MergeOutcome; conflicts?: string[]; failing?: string[] }
+// baseRed: the integration branch fails without the batch, so nothing in it can be judged;
+// failing names what fails there. flaky: what failed once and passed when run again.
+export type MergeReport = { kind: 'merge'; baseRed: boolean; failing: string[]; slices: SliceMerge[]; flaky: string[]; summary: string }
 // cannotRun: the agent could not attempt the work at all (its worktree missing, a tool it
 // needs refused). That is infrastructure, not a verdict: no rung is spent on it.
-export type Report = (DevReport | QaReport | FinalReport | FixReport | ResolveReport) & { cannotRun?: string }
+export type Report = (DevReport | QaReport | FinalReport | FixReport | ResolveReport | MergeReport) & { cannotRun?: string }
 
 export type SliceState = {
   id: string
@@ -81,7 +93,11 @@ export type SliceState = {
   mergedAt?: number
   // The last merge conflict: the files, and how many resolve rounds it has had.
   conflicts?: string[]
+  // What went red when the merge agent merged the slice, for the resolve agent.
+  mergeFailures?: string[]
   resolveAttempts?: number
+  // The next dev round starts over from baseSha (takeover fresh); the dev resets the tree.
+  isFresh?: boolean
   // The check and QA in progress follow a resolve rather than a dev round.
   isAfterResolve?: boolean
   // Dropped from the run by the person (/orchestrator drop).
@@ -123,7 +139,27 @@ export type Blocker = {
   time: number
 }
 
-export type IntegrationState = { branch: string; path?: string; isReady: boolean }
+export type IntegrationState = {
+  branch: string
+  path?: string
+  // The worktree exists and its baseline is green: slices may start.
+  isReady: boolean
+  // The slices the merge agent has in hand; [] for the baseline check, null when none.
+  merging: string[] | null
+  // Where the batch is: the mod reading HEAD, the agent at work, the mod checking its work.
+  step?: 'head' | 'agent' | 'check'
+  // The HEAD the batch started from. Every attempt at the batch starts there again.
+  before?: string
+  report?: MergeReport
+  // 1-based rung on the merge ladder, for this batch.
+  round: number
+  infraRetried: boolean
+  rounds: Round[]
+  // Tests that failed once and passed when run again, across the run.
+  flaky: string[]
+  // The person's answer to the integration blocker, for the merge agent.
+  answer?: string
+}
 
 export type RunStatus = 'running' | 'done' | 'aborted'
 
@@ -138,7 +174,6 @@ export type RunState = {
   slices: Record<string, SliceState>
   order: string[]
   queue: string[]
-  integrating: string | null
   agents: Record<string, AgentRef>
   finals: Record<string, FinalState>
   blockers: Blocker[]
@@ -164,11 +199,12 @@ export type LogEntry = {
 export type Effect =
   | { kind: 'create-integration'; repo: string }
   | { kind: 'create-slice'; slice: string }
-  | { kind: 'reset-slice'; slice: string }
   | { kind: 'check-dev'; slice: string }
-  | { kind: 'clean-for-qa'; slice: string }
   | { kind: 'spawn'; key: string; role: Role; repo: string; slice?: string; round: number; rung: Rung }
-  | { kind: 'integrate'; slice: string }
+  // Read-only: the integration HEAD a batch starts from, refused when the tree is dirty.
+  | { kind: 'read-head'; repo: string }
+  // Read-only: the merge agent's work is what it reported, and only clean merges landed.
+  | { kind: 'check-merge'; repo: string; before: string; merged: string[]; unmerged: string[] }
   | { kind: 'remove-slice'; slice: string }
   | { kind: 'close-issue'; slice: string }
   | { kind: 'blocker'; blocker: Blocker }
@@ -187,8 +223,11 @@ export type Event =
   | { kind: 'report'; agentId: string; report: Report }
   | { kind: 'ended'; agentId: string; reason: EndReason; usage?: Usage; durationMs?: number }
   | { kind: 'dev-checked'; slice: string; isClean: boolean; isAdvanced: boolean }
-  | { kind: 'integrated'; slice: string; isMerged: true; commit: string }
-  | { kind: 'integrated'; slice: string; isMerged: false; conflicts?: string[]; failure?: string }
+  | { kind: 'head-read'; repo: string; head: string }
+  | { kind: 'head-failed'; repo: string; reason: string }
+  // problem: why the merge agent's work does not check out, or null. commits: each merged
+  // slice branch's merge commit.
+  | { kind: 'merge-checked'; repo: string; problem: string | null; commits: Record<string, string> }
   | { kind: 'abort' }
   // The person answered a blocker: `at` is a slice id or `final:<repo>`.
   | { kind: 'retry'; at: string; answer: string }
@@ -197,7 +236,7 @@ export type Event =
 
 export type Step = { state: RunState; effects: Effect[] }
 
-// Resolve rounds a conflict gets before it reaches the person.
+// Resolve rounds a conflict or a red merge gets before it reaches the person.
 export const RESOLVE_ATTEMPTS = 2
 
 // The slices merged after this one started: the ones its merge can collide with.
@@ -238,11 +277,12 @@ export function start(plan: Plan, config: Config, closed: Closed, id: string, no
     config,
     status: 'running',
     startedAt: now,
-    integration: Object.fromEntries(Object.keys(plan.repos).map(repo => [repo, { branch, isReady: false }])),
+    integration: Object.fromEntries(
+      Object.keys(plan.repos).map(repo => [repo, { branch, isReady: false, merging: null, round: 1, infraRetried: false, rounds: [], flaky: [] }]),
+    ),
     slices: {},
     order: plan.slices.map(s => s.id),
     queue: [],
-    integrating: null,
     agents: {},
     finals: Object.fromEntries(Object.keys(plan.repos).map(repo => [repo, { repo, phase: 'idle', round: 0, infraRetried: false, findings: [], rounds: [] }])),
     blockers: [],
@@ -268,6 +308,30 @@ export function start(plan: Plan, config: Config, closed: Closed, id: string, no
 
   schedule(state, now, effects)
   return { state, effects }
+}
+
+// --- a run stored by an older version
+//
+// The store outlives the code: a run saved by an older mod is brought to this shape when it
+// loads, so no field it lacks can throw. A merge that was in flight in the old single slot
+// goes back to the queue, for the merge agent to take as a batch.
+export function upgrade(stored: RunState, defaults: Config): RunState {
+  const state = clone(stored) as RunState & { integrating?: unknown }
+  delete state.integrating
+  state.config = { ...defaults, ...state.config }
+  if (!state.config.merge?.length) state.config.merge = defaults.merge
+  for (const integration of Object.values(state.integration)) {
+    integration.merging ??= null
+    integration.round ??= 1
+    integration.infraRetried ??= false
+    integration.rounds ??= []
+    integration.flaky ??= []
+  }
+  const batched = new Set(Object.values(state.integration).flatMap(i => i.merging ?? []))
+  const stranded = Object.values(state.slices).filter(s => s.phase === 'integrating' && !batched.has(s.id)).map(s => s.id)
+  for (const id of stranded) (state.slices[id] as SliceState).phase = 'queued'
+  state.queue = [...stranded, ...(state.queue ?? []).filter(id => !stranded.includes(id))]
+  return state
 }
 
 // --- step
@@ -308,10 +372,12 @@ export function step(prev: RunState, event: Event, now: number): Step {
       break
 
     case 'integration-ready': {
+      // The worktree is there; nothing starts until the merge agent finds its baseline green.
       const integration = state.integration[event.repo]
-      if (integration) {
+      if (integration && integration.merging === null) {
         integration.path = event.path
-        integration.isReady = true
+        integration.isReady = false
+        startBatch(state, effects, event.repo, [])
       }
       break
     }
@@ -382,7 +448,6 @@ export function step(prev: RunState, event: Event, now: number): Step {
       if (slice && slice.phase === 'checking' && slice.isAfterResolve) {
         if (event.isClean && event.isAdvanced) {
           slice.phase = 'qa'
-          effects.push({ kind: 'clean-for-qa', slice: slice.id })
           spawn(state, effects, 'qa', slice.repo, slice.id, slice.round, state.config.qa, now)
         } else {
           resolveAgain(state, effects, slice, ['the resolve left the worktree dirty or committed nothing; commit the resolved merge'], now)
@@ -390,7 +455,6 @@ export function step(prev: RunState, event: Event, now: number): Step {
       } else if (slice && slice.phase === 'checking') {
         if (event.isClean && event.isAdvanced) {
           slice.phase = 'qa'
-          effects.push({ kind: 'clean-for-qa', slice: slice.id })
           spawn(state, effects, 'qa', slice.repo, slice.id, slice.round, state.config.qa, now)
         } else {
           const last = slice.rounds.at(-1)
@@ -401,26 +465,34 @@ export function step(prev: RunState, event: Event, now: number): Step {
       break
     }
 
-    case 'integrated': {
-      const slice = state.slices[event.slice]
-      if (slice && slice.phase === 'integrating') {
-        state.integrating = null
-        if (event.isMerged) {
-          slice.phase = 'merged'
-          slice.commit = event.commit
-          slice.mergedAt = now
-          state.handoff[slice.id] = handoffOf(state, slice)
-          effects.push({ kind: 'remove-slice', slice: slice.id })
-          if (state.plan.source.kind === 'github') effects.push({ kind: 'close-issue', slice: slice.id })
-        } else if (event.conflicts?.length && (slice.resolveAttempts ?? 0) < RESOLVE_ATTEMPTS) {
-          slice.conflicts = event.conflicts
-          startResolve(state, effects, slice, null, now)
-        } else {
-          const reason = event.conflicts?.length
-            ? `merge conflict in ${event.conflicts.join(', ')} survived ${slice.resolveAttempts ?? 0} resolve round(s); merge aborted`
-            : `verify failed after merge, merge reset: ${event.failure ?? 'no detail'}`
-          blockSlice(state, effects, slice, reason, now)
-        }
+    case 'head-read': {
+      const integration = state.integration[event.repo]
+      if (integration?.step === 'head') {
+        integration.before = event.head
+        integration.step = 'agent'
+        spawnMerge(state, effects, event.repo, now)
+      }
+      break
+    }
+
+    case 'head-failed': {
+      const integration = state.integration[event.repo]
+      if (integration?.step === 'head') {
+        endBatch(state, event.repo, true)
+        blockIntegration(state, effects, event.repo, event.reason, now)
+      }
+      break
+    }
+
+    case 'merge-checked': {
+      const integration = state.integration[event.repo]
+      if (integration?.step !== 'check') break
+      if (event.problem) {
+        integration.step = 'agent'
+        delete integration.report
+        retryMerge(state, effects, event.repo, `the merge agent's work did not check out: ${event.problem}`, now)
+      } else {
+        applyMerge(state, effects, event.repo, event.commits, now)
       }
       break
     }
@@ -436,16 +508,23 @@ function agentOf(state: RunState, agentId: string): AgentRef | undefined {
   return Object.values(state.agents).find(a => a.agentId === agentId)
 }
 
+// Where an agent's rounds and retries live: its slice, the repo's integration for the merge
+// agent, the repo's final QA otherwise.
+const holderOf = (state: RunState, ref: Pick<AgentRef, 'role' | 'repo' | 'slice'>) =>
+  ref.slice ? state.slices[ref.slice] : ref.role === 'merge' ? state.integration[ref.repo] : state.finals[ref.repo]
+
+// What a log line or the drill-in names an agent's work by.
+export const atOf = (ref: Pick<AgentRef, 'role' | 'repo' | 'slice'>) => ref.slice ?? (ref.role === 'merge' ? `merge:${ref.repo}` : `final:${ref.repo}`)
+
 function spawn(state: RunState, effects: Effect[], role: Role, repo: string, slice: string | undefined, round: number, rung: Rung, now: number) {
   state.seq += 1
-  const key = `${state.id}:${slice ?? `final-${repo}`}:${role}:r${round}:${state.seq}`
+  const key = `${state.id}:${atOf({ role, repo, slice }).replace(':', '-')}:${role}:r${round}:${state.seq}`
   const ref: AgentRef = { key, role, repo, round, rung, startedAt: now, ...(slice ? { slice } : {}) }
 
   state.agents[key] = ref
 
   const record: Round = { round, role, rung, startedAt: now }
-  if (slice) state.slices[slice]?.rounds.push(record)
-  else state.finals[repo]?.rounds.push(record)
+  holderOf(state, ref)?.rounds.push(record)
 
   effects.push({ kind: 'spawn', key, role, repo, round, rung, ...(slice ? { slice } : {}) })
 }
@@ -461,7 +540,7 @@ function spawnDev(state: RunState, effects: Effect[], slice: SliceState, now: nu
 }
 
 function roundOf(state: RunState, ref: AgentRef): Round | undefined {
-  const rounds = ref.slice ? state.slices[ref.slice]?.rounds : state.finals[ref.repo]?.rounds
+  const rounds = holderOf(state, ref)?.rounds
   return rounds ? [...rounds].reverse().find(r => r.role === ref.role && r.round === ref.round && r.endedAt === undefined) : undefined
 }
 
@@ -474,6 +553,7 @@ function ended(state: RunState, effects: Effect[], ref: AgentRef, event: Extract
     : !report ? 'no-report'
     : report.kind === 'qa' || report.kind === 'final-qa' ? (report.pass ? 'pass' : 'fail')
     : report.kind === 'resolve' ? (report.resolved ? 'pass' : 'fail')
+    : report.kind === 'merge' ? (report.baseRed || report.slices.some(s => s.outcome !== 'merged') ? 'fail' : 'pass')
     : report.committed ? 'pass' : 'no-commit'
 
   if (round) {
@@ -491,7 +571,7 @@ function ended(state: RunState, effects: Effect[], ref: AgentRef, event: Extract
     kind: 'log',
     entry: {
       run: state.id,
-      at: ref.slice ?? `final:${ref.repo}`,
+      at: atOf(ref),
       role: ref.role,
       mode: slice?.mode ?? null,
       round: ref.round,
@@ -526,9 +606,20 @@ function ended(state: RunState, effects: Effect[], ref: AgentRef, event: Extract
     return
   }
 
+  if (report.kind === 'merge') {
+    const integration = state.integration[ref.repo]
+    if (!integration || integration.step !== 'agent') return
+    // The mod checks the work before it believes the report.
+    integration.report = report
+    integration.step = 'check'
+    effects.push(checkMergeOf(state, ref.repo, report))
+    return
+  }
+
   if (slice) {
     if (report.kind === 'dev') {
       slice.dev = report
+      delete slice.isFresh
       if (report.committed) {
         slice.phase = 'checking'
         effects.push({ kind: 'check-dev', slice: slice.id })
@@ -540,6 +631,15 @@ function ended(state: RunState, effects: Effect[], ref: AgentRef, event: Extract
         slice.phase = 'checking'
         slice.isAfterResolve = true
         effects.push({ kind: 'check-dev', slice: slice.id })
+      } else if (report.notReproduced) {
+        // Red only once merged, and not on the slice with the integration branch in: the merge
+        // agent tries it again, which runs any red twice.
+        if ((slice.resolveAttempts ?? 0) < RESOLVE_ATTEMPTS) {
+          slice.isAfterResolve = false
+          queueFront(state, [slice.id])
+        } else {
+          blockSlice(state, effects, slice, `red only after merging, and not reproduced on the slice: ${(slice.mergeFailures ?? []).join('; ') || report.summary}`, now, rungLabel(ref.rung), slice.mergeFailures)
+        }
       } else {
         blockSlice(state, effects, slice, `requirements conflict with merged work: ${report.conflict || report.summary}`, now, rungLabel(ref.rung))
       }
@@ -594,7 +694,11 @@ function respawn(state: RunState, effects: Effect[], ref: AgentRef, now: number)
 // No result from an agent is infrastructure (or the model forgetting the report), not
 // capability: one more try on the same rung, which uses up no rung, then a blocker.
 function failAgent(state: RunState, effects: Effect[], ref: AgentRef, reason: string, now: number) {
-  const holder = ref.slice ? state.slices[ref.slice] : state.finals[ref.repo]
+  if (ref.role === 'merge') {
+    retryMerge(state, effects, ref.repo, reason, now)
+    return
+  }
+  const holder = holderOf(state, ref)
   if (!holder) return
 
   if (!holder.infraRetried) {
@@ -607,6 +711,10 @@ function failAgent(state: RunState, effects: Effect[], ref: AgentRef, reason: st
 }
 
 function failHard(state: RunState, effects: Effect[], ref: AgentRef, reason: string, now: number) {
+  if (ref.role === 'merge') {
+    climbMerge(state, effects, ref.repo, reason, now)
+    return
+  }
   const slice = ref.slice ? state.slices[ref.slice] : undefined
   if (slice) {
     blockSlice(state, effects, slice, reason, now, rungLabel(ref.rung))
@@ -637,7 +745,8 @@ function climb(state: RunState, effects: Effect[], slice: SliceState, defects: s
   const to = ladder[slice.round - 1]
 
   if (state.config.takeover === 'fresh' && from && to && from.model !== to.model) {
-    effects.push({ kind: 'reset-slice', slice: slice.id })
+    // The new dev resets the tree to where the slice began; the mod does not touch it.
+    slice.isFresh = true
     slice.defects = null
   }
 
@@ -668,6 +777,171 @@ function resolveAgain(state: RunState, effects: Effect[], slice: SliceState, def
   startResolve(state, effects, slice, defects, now)
 }
 
+// --- merging
+//
+// The merge agent takes every queued slice of a repo as one batch: it merges them into the
+// integration worktree, builds and runs the suite, runs any red a second time, and on a red
+// that holds finds which slice caused it. The mod reads HEAD before it starts, checks its work
+// after, and decides each slice from the report. An empty batch is the baseline check.
+
+function startBatch(state: RunState, effects: Effect[], repo: string, ids: string[]) {
+  const integration = state.integration[repo]
+  if (!integration) return
+  integration.merging = ids
+  integration.step = 'head'
+  integration.round = 1
+  integration.infraRetried = false
+  delete integration.before
+  delete integration.report
+  for (const id of ids) {
+    const slice = state.slices[id]
+    if (slice) slice.phase = 'integrating'
+  }
+  effects.push({ kind: 'read-head', repo })
+}
+
+// What the report says landed and what did not, by branch, for the mod to check against git.
+function checkMergeOf(state: RunState, repo: string, report: MergeReport): Effect {
+  const integration = state.integration[repo]
+  const batch = integration?.merging ?? []
+  const isMerged = (id: string) => !report.baseRed && report.slices.find(s => s.slice === id)?.outcome === 'merged'
+  const branchOf = (id: string) => state.slices[id]?.branch ?? id
+  return {
+    kind: 'check-merge',
+    repo,
+    before: integration?.before ?? '',
+    merged: batch.filter(isMerged).map(branchOf),
+    unmerged: batch.filter(id => !isMerged(id)).map(branchOf),
+  }
+}
+
+function spawnMerge(state: RunState, effects: Effect[], repo: string, now: number) {
+  const integration = state.integration[repo]
+  const rung = state.config.merge[(integration?.round ?? 1) - 1]
+  if (!integration || !rung) {
+    endBatch(state, repo, true)
+    blockIntegration(state, effects, repo, 'no rung left on the merge ladder', now)
+    return
+  }
+  spawn(state, effects, 'merge', repo, undefined, integration.round, rung, now)
+}
+
+// The merge agent left no usable result: once more on the same rung, then up the ladder.
+function retryMerge(state: RunState, effects: Effect[], repo: string, reason: string, now: number) {
+  const integration = state.integration[repo]
+  if (!integration) return
+  if (!integration.infraRetried) {
+    integration.infraRetried = true
+    spawnMerge(state, effects, repo, now)
+    return
+  }
+  climbMerge(state, effects, repo, `${reason}, after a retry on the same rung`, now)
+}
+
+function climbMerge(state: RunState, effects: Effect[], repo: string, reason: string, now: number) {
+  const integration = state.integration[repo]
+  if (!integration) return
+  if (integration.round < state.config.merge.length) {
+    integration.round += 1
+    integration.infraRetried = false
+    spawnMerge(state, effects, repo, now)
+    return
+  }
+  const top = state.config.merge.at(-1)
+  endBatch(state, repo, true)
+  blockIntegration(state, effects, repo, `${reason}; the merge ladder is spent`, now, top ? rungLabel(top) : undefined)
+}
+
+// The batch is over. Slices it did not decide go back to the front of the queue.
+function endBatch(state: RunState, repo: string, requeue: boolean) {
+  const integration = state.integration[repo]
+  if (!integration) return
+  const batch = integration.merging ?? []
+  integration.merging = null
+  integration.round = 1
+  integration.infraRetried = false
+  delete integration.step
+  delete integration.before
+  delete integration.report
+  if (requeue) queueFront(state, batch)
+}
+
+function queueFront(state: RunState, ids: string[]) {
+  const back = ids.filter(id => state.slices[id])
+  for (const id of back) (state.slices[id] as SliceState).phase = 'queued'
+  state.queue = [...back, ...state.queue.filter(id => !back.includes(id))]
+}
+
+function applyMerge(state: RunState, effects: Effect[], repo: string, commits: Record<string, string>, now: number) {
+  const integration = state.integration[repo]
+  const report = integration?.report
+  if (!integration || !report) return
+  const batch = integration.merging ?? []
+  integration.flaky = [...new Set([...integration.flaky, ...report.flaky])]
+  endBatch(state, repo, false)
+
+  if (report.baseRed) {
+    // Nothing in the batch can be judged on a red base, and nothing new should start on it.
+    integration.isReady = false
+    queueFront(state, batch)
+    const what = batch.length ? 'without this batch' : 'before any merge'
+    blockIntegration(state, effects, repo, `${integration.branch} fails ${what}, run twice: ${report.failing.join('; ') || report.summary}`, now, undefined, report.failing)
+    return
+  }
+
+  if (!batch.length) {
+    integration.isReady = true
+    return
+  }
+
+  const requeue: string[] = []
+  for (const id of batch) {
+    const slice = state.slices[id]
+    if (!slice) continue
+    const merge = report.slices.find(s => s.slice === id)
+    const outcome = merge?.outcome ?? 'not-tried'
+    if (outcome === 'merged') {
+      markMerged(state, effects, slice, commits[slice.branch] ?? '', now)
+    } else if (outcome === 'conflict') {
+      slice.conflicts = merge?.conflicts ?? []
+      delete slice.mergeFailures
+      resolveOrBlock(state, effects, slice, `merge conflict in ${slice.conflicts.join(', ') || 'unnamed files'}`, now)
+    } else if (outcome === 'red') {
+      slice.conflicts = []
+      slice.mergeFailures = merge?.failing?.length ? merge.failing : ['the build or suite went red with this slice merged; the merge agent named no test']
+      resolveOrBlock(state, effects, slice, `red after merging, twice: ${slice.mergeFailures.join('; ')}`, now)
+    } else {
+      requeue.push(id)
+    }
+  }
+  queueFront(state, requeue)
+}
+
+function markMerged(state: RunState, effects: Effect[], slice: SliceState, commit: string, now: number) {
+  slice.phase = 'merged'
+  slice.commit = commit
+  slice.mergedAt = now
+  delete slice.conflicts
+  delete slice.mergeFailures
+  state.handoff[slice.id] = handoffOf(state, slice)
+  effects.push({ kind: 'remove-slice', slice: slice.id })
+  if (state.plan.source.kind === 'github') effects.push({ kind: 'close-issue', slice: slice.id })
+}
+
+function resolveOrBlock(state: RunState, effects: Effect[], slice: SliceState, what: string, now: number) {
+  if ((slice.resolveAttempts ?? 0) < RESOLVE_ATTEMPTS) {
+    startResolve(state, effects, slice, null, now)
+    return
+  }
+  blockSlice(state, effects, slice, `${what}, after ${slice.resolveAttempts ?? 0} resolve round(s)`, now, undefined, slice.mergeFailures)
+}
+
+// The integration branch needs the person. Slices keep their place; the merges wait for a retry.
+function blockIntegration(state: RunState, effects: Effect[], repo: string, reason: string, now: number, rung?: string, defects?: string[]) {
+  state.blockers = state.blockers.filter(b => b.at !== `integration:${repo}`)
+  block(state, effects, `integration:${repo}`, reason, now, rung, defects, state.integration[repo]?.path)
+}
+
 function remediate(state: RunState, effects: Effect[], final: FinalState, now: number) {
   const ladder = state.config.remediation
 
@@ -694,7 +968,6 @@ function block(state: RunState, effects: Effect[], at: string, reason: string, n
 }
 
 function blockSlice(state: RunState, effects: Effect[], slice: SliceState, reason: string, now: number, rung?: string, defects?: string[]) {
-  if (state.integrating === slice.id) state.integrating = null
   state.queue = state.queue.filter(id => id !== slice.id)
   slice.stoppedIn = slice.phase
   slice.stoppedOnInfra = false
@@ -723,8 +996,11 @@ function blockSlice(state: RunState, effects: Effect[], slice: SliceState, reaso
 function retry(state: RunState, effects: Effect[], at: string, answer: string, now: number) {
   if (at.startsWith('integration:')) {
     const repo = at.slice(12)
-    if (!state.blockers.some(b => b.at === at)) return
+    const integration = state.integration[repo]
+    if (!integration || !state.blockers.some(b => b.at === at)) return
     state.blockers = state.blockers.filter(b => b.at !== at)
+    // The integration worktree is made ready again, and its baseline checked, before anything merges.
+    integration.answer = answer
     for (const slice of Object.values(state.slices)) {
       if (slice.repo === repo && slice.phase === 'halted' && slice.blocker?.startsWith('integration branch')) {
         slice.phase = 'waiting'
@@ -824,13 +1100,15 @@ export function inFlight(state: RunState): Effect[] {
 
   for (const [repo, integration] of Object.entries(state.integration)) {
     const failed = state.blockers.some(b => b.at === `integration:${repo}`)
-    if (!integration.isReady && !failed) effects.push({ kind: 'create-integration', repo })
+    if (!integration.path && !failed) effects.push({ kind: 'create-integration', repo })
+    // The merge agent itself is an agent: a reload finds it lost and runs it again.
+    if (integration.step === 'head') effects.push({ kind: 'read-head', repo })
+    if (integration.step === 'check' && integration.report) effects.push(checkMergeOf(state, repo, integration.report))
   }
 
   for (const slice of Object.values(state.slices)) {
     if (slice.phase === 'starting') effects.push({ kind: 'create-slice', slice: slice.id })
     if (slice.phase === 'checking') effects.push({ kind: 'check-dev', slice: slice.id })
-    if (slice.phase === 'integrating') effects.push({ kind: 'integrate', slice: slice.id })
   }
 
   return effects
@@ -875,17 +1153,17 @@ function schedule(state: RunState, now: number, effects: Effect[]) {
     active += 1
   }
 
-  if (!state.integrating && state.queue.length) {
-    const next = state.queue.shift() as string
-    const slice = state.slices[next]
-    if (slice) {
-      slice.phase = 'integrating'
-      state.integrating = next
-      effects.push({ kind: 'integrate', slice: next })
-    }
+  // Every queued slice of a repo goes to its merge agent as one batch, one batch at a time.
+  for (const [repo, integration] of Object.entries(state.integration)) {
+    if (!integration.isReady || integration.merging || state.blockers.some(b => b.at === `integration:${repo}`)) continue
+    const batch = state.queue.filter(id => state.slices[id]?.repo === repo)
+    if (!batch.length) continue
+    state.queue = state.queue.filter(id => !batch.includes(id))
+    startBatch(state, effects, repo, batch)
   }
 
   if (slices.some(s => UNFINISHED.includes(s.phase))) return
+  if (Object.values(state.integration).some(i => i.merging)) return
 
   for (const final of Object.values(state.finals)) {
     // Skipped is decided again: a retry can reopen a run that ended with nothing merged.

@@ -19,7 +19,7 @@ test('the default config parses into both ladders and the QA rungs', () => {
   expect(config.ladders['haiku-first'][0]).toEqual({ model: 'haiku', effort: 'high' })
   expect(config.qa).toEqual({ model: 'opus', effort: 'high' })
   expect(config.finalQa).toEqual({ model: 'opus', effort: 'xhigh' })
-  expect(config.qaCleanKeep).toEqual(['node_modules', 'packages'])
+  expect(config.merge).toEqual([{ model: 'sonnet', effort: 'medium' }, { model: 'sonnet', effort: 'high' }, { model: 'opus', effort: 'high' }])
 })
 
 test('a rung takes model/effort, a full model id, and high when effort is left out', () => {

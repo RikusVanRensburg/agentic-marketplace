@@ -1,7 +1,7 @@
 {
   "name": "orchestrator",
-  "version": "0.1.4",
-  "description": "/orchestrate runs a multi-issue plan through subagents: dev and isolated QA per slice on escalating model ladders, verified one-at-a-time integration, final QA. Needs worktree-lifecycle",
+  "version": "0.2.0",
+  "description": "/orchestrate runs a multi-issue plan through subagents: dev and isolated QA per slice on escalating model ladders, a merge agent that merges and verifies each batch, final QA. Needs worktree-lifecycle",
   "author": {
     "name": "RR"
   },
@@ -59,11 +59,11 @@
       "description": "How many slices may have a dev or QA agent running at the same time",
       "default": 3
     },
-    "qaCleanKeep": {
+    "merge": {
       "type": "string",
-      "title": "Kept when QA cleans",
-      "description": "Ignored folders kept when the worktree is cleaned before QA, comma separated",
-      "default": "node_modules, packages"
+      "title": "Merge ladder",
+      "description": "Rungs of the merge agent, which merges and verifies each batch; it climbs only when it fails to do or report its work",
+      "default": "sonnet/medium, sonnet/high, opus/high"
     }
   }
 }

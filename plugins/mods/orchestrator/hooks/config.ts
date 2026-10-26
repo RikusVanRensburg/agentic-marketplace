@@ -15,9 +15,10 @@ export type Config = {
   finalQa: Rung
   // Final-QA remediation climbs this ladder; it is the sonnet-first one.
   remediation: Rung[]
+  // The merge agent climbs this ladder when it fails to do or report its work.
+  merge: Rung[]
   takeover: 'continue' | 'fresh'
   concurrency: number
-  qaCleanKeep: string[]
 }
 
 const EFFORTS: readonly string[] = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -27,9 +28,9 @@ export const DEFAULTS = {
   haikuFirst: 'haiku/high, sonnet/high, opus/high',
   qa: 'opus/high',
   finalQa: 'opus/xhigh',
+  merge: 'sonnet/medium, sonnet/high, opus/high',
   takeover: 'continue',
   concurrency: 3,
-  qaCleanKeep: 'node_modules, packages',
 } as const
 
 export type ConfigResult = { isValid: true; config: Config } | { isValid: false; errors: string[] }
@@ -75,7 +76,7 @@ const str = (value: unknown, fallback: string) => (typeof value === 'string' && 
 
 export function configOf(options: Record<string, unknown>): ConfigResult {
   const errors: string[] = []
-  const ladder = (key: 'sonnetFirst' | 'haikuFirst') => {
+  const ladder = (key: 'sonnetFirst' | 'haikuFirst' | 'merge') => {
     const parsed = parseLadder(str(options[key], DEFAULTS[key]))
 
     if (typeof parsed === 'string') {
@@ -98,6 +99,7 @@ export function configOf(options: Record<string, unknown>): ConfigResult {
 
   const sonnetFirst = ladder('sonnetFirst')
   const haikuFirst = ladder('haikuFirst')
+  const merge = ladder('merge')
   const takeover = str(options.takeover, DEFAULTS.takeover)
   const concurrency = typeof options.concurrency === 'number' ? options.concurrency : DEFAULTS.concurrency
 
@@ -114,9 +116,9 @@ export function configOf(options: Record<string, unknown>): ConfigResult {
     qa: rung('qa'),
     finalQa: rung('finalQa'),
     remediation: sonnetFirst,
+    merge,
     takeover: takeover === 'fresh' ? 'fresh' : 'continue',
     concurrency,
-    qaCleanKeep: str(options.qaCleanKeep, DEFAULTS.qaCleanKeep).split(',').map(part => part.trim()).filter(Boolean),
   }
 
   return errors.length ? { isValid: false, errors } : { isValid: true, config }
